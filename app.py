@@ -4,8 +4,8 @@ from supabase import create_client
 from datetime import datetime
 
 # --- แทนที่ด้วยค่าจริงที่คุณก๊อปมาจาก Supabase ---
-SUPABASE_URL = "วาง Project URL ตรงนี้"
-SUPABASE_KEY = "วาง anon public key ตรงนี้"
+SUPABASE_URL = "https://qejqynbxdflwebzzwfzu.supabase.co"
+SUPABASE_KEY = "sb_publishable_hvNQEPvuEAlXfVeCzpy7Ug_kzvihQqq"
 
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
