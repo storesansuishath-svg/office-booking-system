@@ -23,7 +23,7 @@ st.set_page_config(page_title="ระบบจองรถ & ห้องปร�
 # เรียกใช้งานฟังก์ชันล้างข้อมูลทันทีเพื่อให้แอปสะอาด
 auto_delete_old_bookings()
 
-st.title("🚗 ระบบจองรถยนต์และห้องประชุม Online")
+st.title("ระบบจองรถยนต์และห้องประชุม Online")
 
 menu = ["📝 จองใหม่", "📅 ตารางงาน (Real-time)", "🔑 Admin (อนุมัติ)"]
 choice = st.sidebar.selectbox("เมนู", menu)
