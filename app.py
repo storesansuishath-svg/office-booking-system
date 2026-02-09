@@ -19,8 +19,11 @@ def auto_delete_old_bookings():
 # --- 3. ตั้งค่าหน้าจอและ Logo บริษัท ---
 st.set_page_config(page_title="ระบบจองรถ & ห้องประชุม", layout="wide")
 
-# ** ส่วนของ Logo บริษัท (ใส่ลิงก์รูปภาพของคุณตรงนี้) **
-LOGO_URL = "https://drive.google.com/uc?export=view&id=1zCjSjSbCO-mbsaGoDI6g0G-bfmyVfqFV"
+# ลิงก์โลโก้แบบ Direct Link จาก Google Drive ของคุณ
+# (แก้ไขจากรหัสไฟล์: 1zCjSjSbCO-mbsaGoDI6g0G-bfmyVfqFV)
+LOGO_URL = "https://lh3.googleusercontent.com/d/1zCjSjSbCO-mbsaGoDI6g0G-bfmyVfqFV"
+
+# แสดง Logo ใน Sidebar
 st.sidebar.image(LOGO_URL, use_container_width=True)
 st.sidebar.markdown("---")
 
