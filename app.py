@@ -3,10 +3,31 @@ import pandas as pd
 from supabase import create_client
 from datetime import datetime
 
-# --- 1. ตั้งค่าการเชื่อมต่อ Supabase (กรุณาใส่ค่าของคุณ) ---
-SUPABASE_URL = "https://qejqynbxdflwebzzwfzu.supabase.co"
-SUPABASE_KEY = "sb_publishable_hvNQEPvuEAlXfVeCzpy7Ug_kzvihQqq"
+import streamlit as st
+import pandas as pd
+from supabase import create_client
+from datetime import datetime, timedelta
+
+# --- 1. ตั้งค่าการเชื่อมต่อ (เดิมของคุณ) ---
+SUPABASE_URL = "..."
+SUPABASE_KEY = "..."
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+
+# --- 2. ฟังก์ชันลบข้อมูลอัตโนมัติ (เพิ่มตรงนี้) ---
+def auto_delete_old_bookings():
+    threshold_time = (datetime.now() - timedelta(hours=24)).isoformat()
+    try:
+        # สั่งลบรายการที่จบงานไปแล้วเกิน 24 ชม.
+        supabase.table("bookings").delete().lt("end_time", threshold_time).execute()
+    except:
+        pass
+
+# เรียกใช้งานทันทีเพื่อให้แอปสะอาดตลอดเวลา
+auto_delete_old_bookings()
+
+# --- 3. ส่วนการตั้งค่าหน้าจอและเมนู (เดิมของคุณ) ---
+st.set_page_config(page_title="ระบบจองรถ & ห้องประชุม", layout="wide")
+# ... โค้ดที่เหลือของคุณ ...
 
 # --- 2. ตั้งค่าหน้าจอโปรแกรม ---
 st.set_page_config(page_title="ระบบจองรถ & ห้องประชุม", layout="wide")
