@@ -3,14 +3,10 @@ import pandas as pd
 from supabase import create_client
 from datetime import datetime
 
-# --- แทนที่ด้วยค่าจริงที่คุณก๊อปมาจาก Supabase ---
+# --- 1. ตั้งค่าการเชื่อมต่อ Supabase (กรุณาใส่ค่าของคุณ) ---
 SUPABASE_URL = "https://qejqynbxdflwebzzwfzu.supabase.co"
 SUPABASE_KEY = "sb_publishable_hvNQEPvuEAlXfVeCzpy7Ug_kzvihQqq"
-
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
-
-st.set_page_config(page_title="Booking System", layout="wide")
-st.title("🚗 ระบบจองรถและห้องประชุมออนไลน์")
 
 # --- 2. ตั้งค่าหน้าจอโปรแกรม ---
 st.set_page_config(page_title="ระบบจองรถ & ห้องประชุม", layout="wide")
