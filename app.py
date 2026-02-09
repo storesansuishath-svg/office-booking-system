@@ -12,42 +12,111 @@ supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 st.set_page_config(page_title="Booking System", layout="wide")
 st.title("🚗 ระบบจองรถและห้องประชุมออนไลน์")
 
-# เมนูหน้าเว็บ
-menu = ["📝 จองใหม่", "📅 ตารางงาน (Real-time)"]
+# --- 2. ตั้งค่าหน้าจอโปรแกรม ---
+st.set_page_config(page_title="ระบบจองรถ & ห้องประชุม", layout="wide")
+st.title("🚗 ระบบจองรถยนต์และห้องประชุม (Cloud)")
+
+menu = ["📝 จองใหม่", "📅 ตารางงาน (Real-time)", "🔑 Admin (อนุมัติ)"]
 choice = st.sidebar.selectbox("เมนู", menu)
 
 if choice == "📝 จองใหม่":
-    with st.form("booking_form", clear_on_submit=True):
-        res = st.selectbox("เลือกรายการ", ["Civic (ตุ้ม)", "Civic (บอล)", "Camry (เนก)", "ห้องประชุมชั้น 1"])
+    st.subheader("รายละเอียดการจอง")
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        cat = st.radio("ประเภททรัพยากร", ["รถยนต์", "ห้องประชุม"])
+        if cat == "รถยนต์":
+            res = st.selectbox("เลือกคัน", ["Civic (ตุ้ม)", "Civic (บอล)", "Camry (เนก)", "MG ขับเอง"])
+            destination = st.text_input("สถานที่ปลายทาง / ปักหมุด Google Maps", placeholder="เช่น บริษัท ABC หรือ วางลิงก์แผนที่ที่นี่")
+        else:
+            res = st.selectbox("เลือกห้อง", ["ห้องชั้น 1 (ห้องใหญ่)", "ห้องชั้น 2", "ห้อง VIP", "ห้องชั้นลอย", "ห้อง Production"])
+            destination = "" # ห้องประชุมไม่มีปลายทาง
+        
         name = st.text_input("ชื่อผู้จอง")
-        dest = st.text_input("สถานที่ปลายทาง / ปักหมุด Google Maps")
-        purpose = st.text_area("วัตถุประสงค์")
+        phone = st.text_input("เบอร์โทรศัพท์")
+        dept = st.text_input("แผนก")
+
+    with col2:
         t_start = st.datetime_input("เวลาเริ่ม", datetime.now())
         t_end = st.datetime_input("เวลาสิ้นสุด", datetime.now())
+        reason = st.text_area("วัตถุประสงค์การใช้งาน")
+
+    if st.button("ยืนยันการส่งคำขอจอง"):
+        if not name or not phone:
+            st.warning("กรุณากรอกชื่อและเบอร์โทรศัพท์")
+        elif t_start >= t_end:
+            st.error("เวลาเริ่มต้นต้องก่อนเวลาสิ้นสุด")
+        else:
+            # ตรวจสอบการจองซ้ำ (ชนกับรายการที่ Approved แล้ว)
+            check_res = supabase.table("bookings").select("*")\
+                .eq("resource", res)\
+                .eq("status", "Approved").execute()
+            
+            df_check = pd.DataFrame(check_res.data)
+            is_overlap = False
+            
+            if not df_check.empty:
+                # แปลงเวลาเป็น datetime เพื่อเปรียบเทียบ
+                df_check['start_time'] = pd.to_datetime(df_check['start_time'])
+                df_check['end_time'] = pd.to_datetime(df_check['end_time'])
+                
+                # เงื่อนไขการทับซ้อน
+                overlap = df_check[~((df_check['start_time'] >= pd.to_datetime(t_end)) | 
+                                     (df_check['end_time'] <= pd.to_datetime(t_start)))]
+                if not overlap.empty:
+                    is_overlap = True
+
+            if is_overlap:
+                st.error(f"❌ ไม่ว่าง: {res} ถูกจองไปแล้วในช่วงเวลานี้")
+            else:
+                data = {
+                    "resource": res, "requester": name, "phone": phone, 
+                    "dept": dept, "start_time": t_start.isoformat(), 
+                    "end_time": t_end.isoformat(), "purpose": reason, 
+                    "destination": destination, "status": "Pending"
+                }
+                supabase.table("bookings").insert(data).execute()
+                st.success("✅ ส่งคำขอแล้ว! กรุณารอ Admin อนุมัติ")
+                # ส่วนส่ง LINE Notify/Bot สามารถเพิ่มต่อตรงนี้ได้ครับ
+
+elif choice == "🔑 Admin (อนุมัติ)":
+    st.subheader("ระบบจัดการสำหรับ Admin")
+    admin_pw = st.text_input("รหัสผ่าน Admin", type="password")
+    
+    if admin_pw == "1234":
+        res = supabase.table("bookings").select("*").eq("status", "Pending").execute()
+        df_pending = pd.DataFrame(res.data)
         
-        if st.form_submit_button("ยืนยันการจอง"):
-            data = {
-                "resource": res, 
-                "requester": name, 
-                "destination": dest,
-                "purpose": purpose,
-                "start_time": t_start.isoformat(), 
-                "end_time": t_end.isoformat(),
-                "status": "Approved" # ตั้งให้ผ่านเลยในช่วงแรกเพื่อทดสอบ
-            }
-            supabase.table("bookings").insert(data).execute()
-            st.success("✅ บันทึกข้อมูลเรียบร้อยแล้ว!")
+        if df_pending.empty:
+            st.write("ไม่มีรายการรออนุมัติ")
+        else:
+            st.write("รายการรอการตัดสินใจ:")
+            st.dataframe(df_pending[['id', 'resource', 'requester', 'dept', 'start_time', 'end_time']], use_container_width=True)
+            
+            target_id = st.number_input("ใส่ ID ที่ต้องการจัดการ", step=1, min_value=1)
+            col_a, col_b = st.columns(2)
+            
+            if col_a.button("✅ อนุมัติการจอง"):
+                supabase.table("bookings").update({"status": "Approved"}).eq("id", target_id).execute()
+                st.success(f"อนุมัติ ID {target_id} เรียบร้อย")
+                st.rerun()
+            if col_b.button("❌ ปฏิเสธการจอง"):
+                supabase.table("bookings").update({"status": "Rejected"}).eq("id", target_id).execute()
+                st.warning(f"ปฏิเสธ ID {target_id} แล้ว")
+                st.rerun()
 
 elif choice == "📅 ตารางงาน (Real-time)":
-    st.subheader("รายการที่มีการจองขณะนี้")
+    st.subheader("ตารางที่ได้รับการอนุมัติแล้ว")
     now = datetime.now().isoformat()
-    # ดึงเฉพาะรายการที่ยังไม่หมดเวลา
-    res = supabase.table("bookings").select("*").gt("end_time", now).execute()
     
-    if res.data:
-        df = pd.DataFrame(res.data)
-        df = df[['resource', 'requester', 'start_time', 'end_time', 'purpose', 'destination']]
-        df.columns = ['ทรัพยากร', 'ผู้จอง', 'เริ่ม', 'สิ้นสุด', 'วัตถุประสงค์', 'สถานที่/แผนที่']
-        st.table(df)
+    # ดึงเฉพาะรายการที่ Approved และยังไม่สิ้นสุด
+    res = supabase.table("bookings").select("*").eq("status", "Approved").gt("end_time", now).execute()
+    df = pd.DataFrame(res.data)
+    
+    if df.empty:
+        st.info("ขณะนี้ไม่มีทรัพยากรที่ถูกใช้งานอยู่")
     else:
-        st.info("ขณะนี้ไม่มีรายการใช้งาน")
+        # เลือกคอลัมน์และเปลี่ยนชื่อให้สวยงาม
+        df_display = df[['resource', 'requester', 'dept', 'start_time', 'end_time', 'purpose']]
+        df_display.columns = ['ทรัพยากร', 'ผู้จอง', 'แผนก', 'เริ่ม', 'สิ้นสุด', 'วัตถุประสงค์']
+        st.dataframe(df_display, use_container_width=True)
