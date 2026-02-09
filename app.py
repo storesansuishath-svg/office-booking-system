@@ -10,7 +10,7 @@ supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 # --- 2. ตั้งค่าหน้าจอโปรแกรม ---
 st.set_page_config(page_title="ระบบจองรถ & ห้องประชุม", layout="wide")
-st.title("🚗 ระบบจองรถยนต์และห้องประชุม (Cloud)")
+st.title("ระบบจองรถยนต์และห้องประชุม Online")
 
 menu = ["📝 จองใหม่", "📅 ตารางงาน (Real-time)", "🔑 Admin (อนุมัติ)"]
 choice = st.sidebar.selectbox("เมนู", menu)
