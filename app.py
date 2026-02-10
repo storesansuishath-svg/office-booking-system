@@ -2,27 +2,25 @@ import streamlit as st
 import pandas as pd
 from supabase import create_client
 from datetime import datetime, timedelta
-import requests
-import json
+import requests  # เพิ่มสำหรับ LINE
+import json      # เพิ่มสำหรับ LINE
 
-# --- 1. ตั้งค่าการเชื่อมต่อ (ใส่ข้อมูลจริงของคุณ) ---
+# --- 1. การเชื่อมต่อ Supabase ---
 SUPABASE_URL = "https://qejqynbxdflwebzzwfzu.supabase.co" 
 SUPABASE_KEY = "sb_publishable_hvNQEPvuEAlXfVeCzpy7Ug_kzvihQqq"
-LINE_ACCESS_TOKEN = "xEUMxrdi/lmNoq9Mmsh4gnOm7lK7fvQrFTPSN4feHEJ/KsCClHZA6KzaTMm3gdMzOCwMD47HldTFuCBve9JRa1uAlAuq24sK2Iv/C5T/+p97lwL6RGIn/sErc0dqvlzNXOt8ACx3XnKQKXehVBpFyQdB04t89/1O/w1cDnyilFU="
-GROUP_ID = "Cd762a95cecb9396d5a4f9e328159c46b" 
-
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-# --- 2. ฟังก์ชันส่ง LINE (รองรับหลายสถานะ) ---
+# --- [ส่วนที่เพิ่ม] ตั้งค่า LINE Messaging API ---
+LINE_ACCESS_TOKEN = "BMEKLnhpRvRzArHJsnTzulIyqefXrwYo6QDBroRLMbGcV16/Ca+8eI5v5H5AfgTEOCwMD47HldTFuCBve9JRa1uAlAuq24sK2Iv/C5T/+p8Qrf3rxQKbOiaiH4CDQWf64AYuUbzSiuiPYdnrSWhm0gdB04t89/1O/w1cDnyilFU="
+GROUP_ID = "Cd762a95cecb9396d5a4f9e328159c46b"
+
 def send_line_notification(title, resource, name, status, extra_info=""):
     url = "https://api.line.me/v2/bot/message/push"
     headers = {
         "Content-Type": "application/json",
         "Authorization": f"Bearer {LINE_ACCESS_TOKEN}"
     }
-    
     status_icon = "🔔" if status == "Pending" else ("✅" if status == "Approved" else "❌")
-    
     msg_text = (
         f"{status_icon} **{title}**\n"
         f"━━━━━━━━━━━━━━━\n"
@@ -32,86 +30,143 @@ def send_line_notification(title, resource, name, status, extra_info=""):
         f"{extra_info}"
         f"\n━━━━━━━━━━━━━━━"
     )
-    
     payload = {"to": GROUP_ID, "messages": [{"type": "text", "text": msg_text}]}
     try:
         requests.post(url, headers=headers, data=json.dumps(payload))
     except:
         pass
 
-# --- 3. หน้าจอหลัก ---
-st.set_page_config(page_title="Sansui Booking System", layout="wide")
-LOGO_URL = "https://drive.google.com/uc?export=view&id=1zCjSjSbCO-mbsaGoDI6g0G-bfmyVfqFV"
+# --- 2. ฟังก์ชันลบข้อมูลอัตโนมัติ (จบงานเกิน 24 ชม.) ---
+def auto_delete_old_bookings():
+    threshold_time = (datetime.now() - timedelta(hours=24)).isoformat()
+    try:
+        supabase.table("bookings").delete().lt("end_time", threshold_time).execute()
+    except:
+        pass
+
+# --- 3. ตั้งค่าหน้าจอและ Logo บริษัท ---
+st.set_page_config(page_title="ระบบจองรถ & ห้องประชุม", layout="wide")
+
+# ลิงก์โลโก้แบบ Direct Link
+LOGO_URL = "https://lh3.googleusercontent.com/d/1zCjSjSbCO-mbsaGoDI6g0G-bfmyVfqFV"
 st.sidebar.image(LOGO_URL, use_container_width=True)
+st.sidebar.markdown("---")
 
-menu = ["📝 จองใหม่", "📅 ดูสถานะและตารางงาน", "🔑 Admin (อนุมัติรายการ)"]
-choice = st.sidebar.selectbox("เมนูหลัก", menu)
+auto_delete_old_bookings()
 
-# --- ส่วนที่ 1: จองใหม่ ---
+st.title("ระบบจองรถยนต์และห้องประชุม Online")
+
+menu = ["📝 จองใหม่", "📅 ตารางงาน (Real-time)", "🔑 Admin (อนุมัติ)"]
+choice = st.sidebar.selectbox("เมนู", menu)
+
+# --- หน้าจองใหม่ ---
 if choice == "📝 จองใหม่":
-    st.header("📝 ลงทะเบียนจอง")
+    st.subheader("รายละเอียดการจอง")
     col1, col2 = st.columns(2)
     with col1:
-        cat = st.radio("ประเภท", ["รถยนต์", "ห้องประชุม"], horizontal=True)
-        res = st.selectbox("เลือกรายการ", ["Civic (ตุ้ม)", "Civic (บอล)", "Camry (เนก)", "MG ขับเอง"] if cat == "รถยนต์" else ["ห้องใหญ่ ชั้น 1", "ห้องชั้น 2", "ห้อง VIP"])
+        cat = st.radio("ประเภททรัพยากร", ["รถยนต์", "ห้องประชุม"])
+        if cat == "รถยนต์":
+            res = st.selectbox("เลือกคัน", ["Civic (ตุ้ม)", "Civic (บอล)", "Camry (เนก)", "MG ขับเอง"])
+            destination = st.text_input("สถานที่ปลายทาง", placeholder="เช่น บริษัท ABC")
+        else:
+            res = st.selectbox("เลือกห้อง", ["ห้องชั้น 1 (ห้องใหญ่)", "ห้องชั้น 2", "ห้อง VIP", "ห้องชั้นลอย", "ห้อง Production"])
+            destination = "Office"
         name = st.text_input("ชื่อผู้จอง")
+        phone = st.text_input("เบอร์โทรศัพท์")
         dept = st.text_input("แผนก")
     with col2:
-        t_start = st.datetime_input("เริ่ม", datetime.now())
-        t_end = st.datetime_input("สิ้นสุด", datetime.now() + timedelta(hours=1))
-        dest = st.text_input("ปลายทาง/รายละเอียด")
+        t_start = st.datetime_input("เวลาเริ่ม", datetime.now())
+        t_end = st.datetime_input("เวลาสิ้นสุด", datetime.now())
+        reason = st.text_area("วัตถุประสงค์การใช้งาน")
 
-    if st.button("🚀 ยืนยันการจอง"):
-        data = {
-            "resource": res, "requester": name, "dept": dept, 
-            "start_time": t_start.isoformat(), "end_time": t_end.isoformat(),
-            "destination": dest, "status": "Pending"
-        }
-        supabase.table("bookings").insert(data).execute()
-        
-        # แจ้งเตือนเข้า LINE กลุ่ม
-        send_line_notification("มีคำขอจองใหม่!", res, name, "Pending", f"📍 ปลายทาง: {dest}")
-        st.success("✅ ส่งคำขอแล้ว! รอ Admin อนุมัติในกลุ่ม LINE")
+    if st.button("ยืนยันการส่งคำขอจอง"):
+        if not name or not phone or not reason or not dept:
+            st.warning("⚠️ กรุณากรอกข้อมูลให้ครบถ้วน")
+        elif t_start >= t_end:
+            st.error("❌ เวลาเริ่มต้นต้องก่อนเวลาสิ้นสุด")
+        else:
+            check_res = supabase.table("bookings").select("*").eq("resource", res).eq("status", "Approved").execute()
+            df_check = pd.DataFrame(check_res.data)
+            is_overlap = False
+            if not df_check.empty:
+                df_check['start_time'] = pd.to_datetime(df_check['start_time']).dt.tz_localize(None)
+                df_check['end_time'] = pd.to_datetime(df_check['end_time']).dt.tz_localize(None)
+                overlap = df_check[~((df_check['start_time'] >= t_end) | (df_check['end_time'] <= t_start))]
+                if not overlap.empty: is_overlap = True
 
-# --- ส่วนที่ 2: ดูสถานะและตารางงาน ---
-elif choice == "📅 ดูสถานะและตารางงาน":
-    st.header("📅 สถานะการจองทั้งหมด")
-    res = supabase.table("bookings").select("*").order("created_at", desc=True).execute()
+            if is_overlap:
+                st.error(f"❌ ไม่ว่าง: {res} ถูกจองไปแล้วในช่วงเวลานี้")
+            else:
+                data = {"resource": res, "requester": name, "phone": phone, "dept": dept, 
+                        "start_time": t_start.isoformat(), "end_time": t_end.isoformat(), 
+                        "purpose": reason, "destination": destination, "status": "Pending"}
+                supabase.table("bookings").insert(data).execute()
+                
+                # --- [ส่วนที่เพิ่ม] แจ้งเตือน LINE เมื่อจองใหม่ ---
+                send_line_notification("มีคำขอจองใหม่!", res, name, "Pending", f"📍 ปลายทาง: {destination}")
+                
+                st.success("✅ ส่งคำขอเรียบร้อยแล้ว!")
+
+# --- หน้า Admin ---
+elif choice == "🔑 Admin (อนุมัติ)":
+    st.subheader("ระบบจัดการสำหรับ Admin")
+    admin_pw = st.text_input("รหัสผ่าน Admin", type="password")
+    if admin_pw == "1234":
+        res = supabase.table("bookings").select("*").eq("status", "Pending").execute()
+        df_pending = pd.DataFrame(res.data)
+        if df_pending.empty:
+            st.info("ไม่มีรายการรออนุมัติ")
+        else:
+            st.write("รายการรอการตัดสินใจ:")
+            st.dataframe(df_pending[['id', 'resource', 'requester', 'dept', 'start_time', 'end_time']], use_container_width=True)
+            target_id = st.number_input("ใส่ ID ที่ต้องการจัดการ", step=1, min_value=1)
+            c1, c2 = st.columns(2)
+            
+            # ดึงข้อมูลรายการที่จะอนุมัติเพื่อเอามาส่ง LINE
+            current_booking = df_pending[df_pending['id'] == target_id]
+            
+            if c1.button("✅ อนุมัติ"):
+                supabase.table("bookings").update({"status": "Approved"}).eq("id", target_id).execute()
+                if not current_booking.empty:
+                    # --- [ส่วนที่เพิ่ม] แจ้งเตือน LINE เมื่ออนุมัติ ---
+                    send_line_notification("ผลการอนุมัติ", current_booking.iloc[0]['resource'], current_booking.iloc[0]['requester'], "Approved")
+                st.rerun()
+            if c2.button("❌ ปฏิเสธ"):
+                supabase.table("bookings").update({"status": "Rejected"}).eq("id", target_id).execute()
+                if not current_booking.empty:
+                    # --- [ส่วนที่เพิ่ม] แจ้งเตือน LINE เมื่อปฏิเสธ ---
+                    send_line_notification("ผลการอนุมัติ", current_booking.iloc[0]['resource'], current_booking.iloc[0]['requester'], "Rejected")
+                st.rerun()
+
+# --- หน้าตารางงาน (แสดงทุกรายการที่ยังไม่จบงาน) ---
+elif choice == "📅 ตารางงาน (Real-time)":
+    st.subheader("📅 ตารางงานปัจจุบันและล่วงหน้า")
+    view_cat = st.radio("เลือกประเภทที่จะแสดง", ["ทั้งหมด", "รถยนต์", "ห้องประชุม"], horizontal=True)
+    now = datetime.now().isoformat()
+    res = supabase.table("bookings").select("*").eq("status", "Approved").gt("end_time", now).order("start_time").execute()
     df = pd.DataFrame(res.data)
     
-    if not df.empty:
-        # ปรับแต่งการแสดงผล
-        df['start_time'] = pd.to_datetime(df['start_time']).dt.strftime('%d/%m %H:%M')
-        df['status_display'] = df['status'].map({"Pending": "⏳ รออนุมัติ", "Approved": "✅ อนุมัติแล้ว", "Rejected": "❌ ปฏิเสธ"})
-        
-        st.dataframe(df[['resource', 'requester', 'start_time', 'status_display', 'destination']], 
-                     column_config={"status_display": "สถานะ", "resource": "รายการ", "requester": "ผู้จอง"},
-                     use_container_width=True, hide_index=True)
+    if df.empty:
+        st.info("ขณะนี้ไม่มีรายการจอง")
     else:
-        st.info("ไม่มีข้อมูลการจอง")
+        if view_cat == "รถยนต์":
+            car_list = ["Civic (ตุ้ม)", "Civic (บอล)", "Camry (เนก)", "MG ขับเอง"]
+            df = df[df['resource'].isin(car_list)]
+        elif view_cat == "ห้องประชุม":
+            room_list = ["ห้องชั้น 1 (ห้องใหญ่)", "ห้องชั้น 2", "ห้อง VIP", "ห้องชั้นลอย", "ห้อง Production"]
+            df = df[df['resource'].isin(room_list)]
 
-# --- ส่วนที่ 3: Admin (อนุมัติรายการ) ---
-elif choice == "🔑 Admin (อนุมัติรายการ)":
-    st.header("🔑 ส่วนจัดการสำหรับ Admin")
-    if st.text_input("รหัสผ่าน Admin", type="password") == "1234":
-        # ดึงเฉพาะรายการที่สถานะเป็น Pending
-        res = supabase.table("bookings").select("*").eq("status", "Pending").execute()
-        df_p = pd.DataFrame(res.data)
-        
-        if not df_p.empty:
-            for index, row in df_p.iterrows():
-                with st.expander(f"📌 {row['resource']} - โดย {row['requester']}"):
-                    st.write(f"**เวลา:** {row['start_time']} ถึง {row['end_time']}")
-                    st.write(f"**วัตถุประสงค์:** {row['destination']}")
-                    
-                    c1, c2 = st.columns(2)
-                    if c1.button("✅ อนุมัติ", key=f"app_{row['id']}"):
-                        supabase.table("bookings").update({"status": "Approved"}).eq("id", row['id']).execute()
-                        send_line_notification("ผลการอนุมัติ", row['resource'], row['requester'], "Approved")
-                        st.rerun()
-                    if c2.button("❌ ปฏิเสธ", key=f"rej_{row['id']}"):
-                        supabase.table("bookings").update({"status": "Rejected"}).eq("id", row['id']).execute()
-                        send_line_notification("ผลการอนุมัติ", row['resource'], row['requester'], "Rejected")
-                        st.rerun()
+        if df.empty:
+            st.info(f"ไม่มีรายการจองในหมวด {view_cat}")
         else:
-            st.success("🎉 ไม่มีรายการค้างคา!")
+            df = df.reset_index(drop=True)
+            df.index += 1
+            df.insert(0, 'ลำดับ/No.', df.index)
+            df['start_time'] = pd.to_datetime(df['start_time']).dt.strftime('%d/%m/%Y %H:%M')
+            df['end_time'] = pd.to_datetime(df['end_time']).dt.strftime('%d/%m/%Y %H:%M')
+            df_display = df[['ลำดับ/No.', 'resource', 'start_time', 'end_time', 'requester', 'purpose', 'destination']]
+            df_display.columns = [
+                'ลำดับ / No.', 'รายการ / Resource', 'เวลาเริ่ม / Start Time', 
+                'เวลาสิ้นสุด / End Time', 'ผู้จอง / Name', 'วัตถุประสงค์ / Purpose', 'ปลายทาง / Destination'
+            ]
+            st.dataframe(df_display, use_container_width=True)
