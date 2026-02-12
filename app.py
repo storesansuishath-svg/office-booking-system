@@ -10,31 +10,27 @@ SUPABASE_URL = "https://qejqynbxdflwebzzwfzu.supabase.co"
 SUPABASE_KEY = "sb_publishable_hvNQEPvuEAlXfVeCzpy7Ug_kzvihQqq"
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-# --- [ส่วนที่เพิ่ม] ตั้งค่า LINE Messaging API ---
-LINE_ACCESS_TOKEN = "ILJVHrD24hZCe/stNR6wKxglGerAEtefHwB0HlDzq2vx5zc+hx0JoS2fDQe6BFzsOCwMD47HldTFuCBve9JRa1uAlAuq24sK2Iv/C5T/+p8Vkh1ppr3MKOb0ghP9MGO1kVj4UmgSzdyrI8P0vKHprgdB04t89/1O/w1cDnyilFU="
-GROUP_ID = "92765784656c2d17a334add0233d9e2f"
-
-def send_line_notification(title, resource, name, status, extra_info=""):
-    url = "https://api.line.me/v2/bot/message/push"
-    headers = {
-        "Content-Type": "application/json",
-        "Authorization": f"Bearer {LINE_ACCESS_TOKEN}"
+# --- [แก้ไข] ฟังก์ชันแจ้งเตือนส่งไปที่ Render Bot ---
+def send_line_notification(booking_id, resource, name, dept, t_start, t_end, purpose, destination):
+    # เปลี่ยนเป็น URL ของบอทบน Render ที่เราทำกันไว้
+    render_url = "https://line-booking-system.onrender.com/notify"
+    
+    payload = {
+        "id": booking_id,
+        "resource": resource,
+        "name": name,
+        "dept": dept,
+        "date": t_start.strftime("%d/%m/%Y %H:%M"),
+        "end_date": t_end.strftime("%H:%M"),
+        "purpose": purpose,
+        "destination": destination
     }
-    status_icon = "🔔" if status == "Pending" else ("✅" if status == "Approved" else "❌")
-    msg_text = (
-        f"{status_icon} **{title}**\n"
-        f"━━━━━━━━━━━━━━━\n"
-        f"🔹 รายการ: {resource}\n"
-        f"👤 ผู้จอง: {name}\n"
-        f"📊 สถานะ: {status}\n"
-        f"{extra_info}"
-        f"\n━━━━━━━━━━━━━━━"
-    )
-    payload = {"to": GROUP_ID, "messages": [{"type": "text", "text": msg_text}]}
+    
     try:
-        requests.post(url, headers=headers, data=json.dumps(payload))
-    except:
-        pass
+        # ยิงไปที่ Bot บน Render เพื่อให้ Bot ส่ง Flex Message เข้าไลน์
+        requests.post(render_url, json=payload, timeout=5)
+    except Exception as e:
+        print(f"LINE Notification Error: {e}")
 
 # --- 2. ฟังก์ชันลบข้อมูลอัตโนมัติ (จบงานเกิน 24 ชม.) ---
 def auto_delete_old_bookings():
@@ -100,10 +96,14 @@ if choice == "📝 จองใหม่":
                 data = {"resource": res, "requester": name, "phone": phone, "dept": dept, 
                         "start_time": t_start.isoformat(), "end_time": t_end.isoformat(), 
                         "purpose": reason, "destination": destination, "status": "Pending"}
-                supabase.table("bookings").insert(data).execute()
                 
-                # --- [ส่วนที่เพิ่ม] แจ้งเตือน LINE เมื่อจองใหม่ ---
-                send_line_notification("มีคำขอจองใหม่!", res, name, "Pending", f"📍 ปลายทาง: {destination}")
+                # เก็บค่าที่ Insert เพื่อเอา ID มาใช้
+                response = supabase.table("bookings").insert(data).execute()
+                
+                if response.data:
+                    booking_id = response.data[0]['id']
+                    # --- [แก้ไขจุดนี้] ส่งข้อมูลไปหา LINE Bot ---
+                    send_line_notification(booking_id, res, name, dept, t_start, t_end, reason, destination)
                 
                 st.success("✅ ส่งคำขอเรียบร้อยแล้ว!")
 
