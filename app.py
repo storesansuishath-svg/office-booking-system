@@ -107,36 +107,70 @@ if choice == "📝 จองใหม่":
                 
                 st.success("✅ ส่งคำขอเรียบร้อยแล้ว!")
 
-# --- หน้า Admin ---
 elif choice == "🔑 Admin (อนุมัติ)":
-    st.subheader("ระบบจัดการสำหรับ Admin")
-    admin_pw = st.text_input("รหัสผ่าน Admin", type="password")
-    if admin_pw == "1234":
-        res = supabase.table("bookings").select("*").eq("status", "Pending").execute()
-        df_pending = pd.DataFrame(res.data)
-        if df_pending.empty:
-            st.info("ไม่มีรายการรออนุมัติ")
+    st.subheader("🔑 ระบบจัดการการจอง (Admin Dashboard)")
+    
+    # 1. เช็ค Password
+    admin_pw = st.text_input("🔒 ใส่รหัสผ่าน Admin", type="password")
+    
+    if admin_pw == "1234": # <--- แก้รหัสผ่านของคุณตรงนี้
+        st.success("Login สำเร็จ!")
+        st.markdown("---")
+
+        # 2. ดึงข้อมูลที่รออนุมัติ (Pending)
+        try:
+            res = supabase.table("bookings").select("*").eq("status", "Pending").order("id").execute()
+            pending_items = res.data
+        except Exception as e:
+            st.error(f"เกิดข้อผิดพลาดในการดึงข้อมูล: {e}")
+            pending_items = []
+
+        # 3. แสดงผลแบบ Card (การ์ดรายการ)
+        if not pending_items:
+            st.info("✅ เยี่ยมมาก! ไม่มีรายการรออนุมัติในขณะนี้")
         else:
-            st.write("รายการรอการตัดสินใจ:")
-            st.dataframe(df_pending[['id', 'resource', 'requester', 'dept', 'start_time', 'end_time']], use_container_width=True)
-            target_id = st.number_input("ใส่ ID ที่ต้องการจัดการ", step=1, min_value=1)
-            c1, c2 = st.columns(2)
+            st.write(f"📌 มีรายการรอตรวจสอบทั้งหมด **{len(pending_items)}** รายการ")
             
-            # ดึงข้อมูลรายการที่จะอนุมัติเพื่อเอามาส่ง LINE
-            current_booking = df_pending[df_pending['id'] == target_id]
-            
-            if c1.button("✅ อนุมัติ"):
-                supabase.table("bookings").update({"status": "Approved"}).eq("id", target_id).execute()
-                if not current_booking.empty:
-                    # --- [ส่วนที่เพิ่ม] แจ้งเตือน LINE เมื่ออนุมัติ ---
-                    send_line_notification("ผลการอนุมัติ", current_booking.iloc[0]['resource'], current_booking.iloc[0]['requester'], "Approved")
-                st.rerun()
-            if c2.button("❌ ปฏิเสธ"):
-                supabase.table("bookings").update({"status": "Rejected"}).eq("id", target_id).execute()
-                if not current_booking.empty:
-                    # --- [ส่วนที่เพิ่ม] แจ้งเตือน LINE เมื่อปฏิเสธ ---
-                    send_line_notification("ผลการอนุมัติ", current_booking.iloc[0]['resource'], current_booking.iloc[0]['requester'], "Rejected")
-                st.rerun()
+            for item in pending_items:
+                with st.container(border=True): # สร้างกรอบล้อมรอบ
+                    col1, col2, col3 = st.columns([3, 2, 2])
+                    
+                    with col1:
+                        st.markdown(f"**🚗/🏢 : {item['resource']}**")
+                        st.text(f"👤 ผู้ขอ: {item['requester']} ({item['dept']})")
+                        st.caption(f"📝 เหตุผล: {item['purpose']}")
+                    
+                    with col2:
+                        try:
+                            start_dt = datetime.fromisoformat(item['start_time'])
+                            end_dt = datetime.fromisoformat(item['end_time'])
+                            date_str = start_dt.strftime("%d/%m/%Y")
+                            time_str = f"{start_dt.strftime('%H:%M')} - {end_dt.strftime('%H:%M')}"
+                        except:
+                            date_str, time_str = "-", "-"
+                            
+                        st.markdown(f"📅 **{date_str}**")
+                        st.markdown(f"⏰ **{time_str}**")
+                        st.caption(f"📍 {item['destination']}")
+
+                    with col3:
+                        st.write("") # เว้นระยะ
+                        btn_approve, btn_reject = st.columns(2)
+                        
+                        # ปุ่มอนุมัติ (สีเขียว)
+                        if btn_approve.button("✅", key=f"app_{item['id']}", help="อนุมัติ", use_container_width=True):
+                            supabase.table("bookings").update({"status": "Approved"}).eq("id", item['id']).execute()
+                            st.toast(f"✅ อนุมัติคุณ {item['requester']} เรียบร้อย!", icon="🎉")
+                            st.rerun()
+
+                        # ปุ่มปฏิเสธ (สีแดง)
+                        if btn_reject.button("❌", key=f"rej_{item['id']}", help="ปฏิเสธ", use_container_width=True):
+                            supabase.table("bookings").update({"status": "Rejected"}).eq("id", item['id']).execute()
+                            st.toast(f"❌ ปฏิเสธรายการแล้ว", icon="🗑️")
+                            st.rerun()
+    
+    elif admin_pw != "":
+        st.error("❌ รหัสผ่านไม่ถูกต้อง")
 
 # --- หน้าตารางงาน (แสดงทุกรายการที่ยังไม่จบงาน) ---
 elif choice == "📅 ตารางงาน (Real-time)":
