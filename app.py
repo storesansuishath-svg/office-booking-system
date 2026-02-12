@@ -11,8 +11,8 @@ SUPABASE_KEY = "sb_publishable_hvNQEPvuEAlXfVeCzpy7Ug_kzvihQqq"
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 # --- [ส่วนที่เพิ่ม] ตั้งค่า LINE Messaging API ---
-LINE_ACCESS_TOKEN = "BMEKLnhpRvRzArHJsnTzulIyqefXrwYo6QDBroRLMbGcV16/Ca+8eI5v5H5AfgTEOCwMD47HldTFuCBve9JRa1uAlAuq24sK2Iv/C5T/+p8Qrf3rxQKbOiaiH4CDQWf64AYuUbzSiuiPYdnrSWhm0gdB04t89/1O/w1cDnyilFU="
-GROUP_ID = "Cd762a95cecb9396d5a4f9e328159c46b"
+LINE_ACCESS_TOKEN = "ILJVHrD24hZCe/stNR6wKxglGerAEtefHwB0HlDzq2vx5zc+hx0JoS2fDQe6BFzsOCwMD47HldTFuCBve9JRa1uAlAuq24sK2Iv/C5T/+p8Vkh1ppr3MKOb0ghP9MGO1kVj4UmgSzdyrI8P0vKHprgdB04t89/1O/w1cDnyilFU="
+GROUP_ID = "92765784656c2d17a334add0233d9e2f"
 
 def send_line_notification(title, resource, name, status, extra_info=""):
     url = "https://api.line.me/v2/bot/message/push"
