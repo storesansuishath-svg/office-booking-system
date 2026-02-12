@@ -10,21 +10,25 @@ SUPABASE_URL = "https://qejqynbxdflwebzzwfzu.supabase.co"
 SUPABASE_KEY = "sb_publishable_hvNQEPvuEAlXfVeCzpy7Ug_kzvihQqq"
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-# --- [แก้ไข] ฟังก์ชันแจ้งเตือนส่งไปที่ Render Bot ---
+# แก้ไขในไฟล์ Web Streamlit นะครับ
 def send_line_notification(booking_id, resource, name, dept, t_start, t_end, purpose, destination):
-    # เปลี่ยนเป็น URL ของบอทบน Render ที่เราทำกันไว้
     render_url = "https://line-booking-system.onrender.com/notify"
     
+    # ปรับชื่อตัวแปร (Key) ฝั่งซ้ายมือ ให้ตรงกับที่บอทฝั่ง Render รอรับครับ
     payload = {
         "id": booking_id,
         "resource": resource,
-        "name": name,
-        "dept": dept,
-        "date": t_start.strftime("%d/%m/%Y %H:%M"),
-        "end_date": t_end.strftime("%H:%M"),
-        "purpose": purpose,
-        "destination": destination
+        "name": name,          # บอทรอรับคำว่า 'name'
+        "dept": dept,          # บอทรอรับคำว่า 'dept'
+        "date": t_start.strftime("%d/%m/%Y %H:%M"), # บอทรอรับคำว่า 'date'
+        "end_date": t_end.strftime("%H:%M"),         # บอทรอรับคำว่า 'end_date'
+        "purpose": purpose     # บอทรอรับคำว่า 'purpose'
     }
+    
+    try:
+        requests.post(render_url, json=payload, timeout=5)
+    except:
+        pass
     
     try:
         # ยิงไปที่ Bot บน Render เพื่อให้ Bot ส่ง Flex Message เข้าไลน์
