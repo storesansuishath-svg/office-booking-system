@@ -10,11 +10,11 @@ SUPABASE_URL = "https://qejqynbxdflwebzzwfzu.supabase.co"
 SUPABASE_KEY = "sb_publishable_hvNQEPvuEAlXfVeCzpy7Ug_kzvihQqq"
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-# ฟังก์ชันแจ้งเตือน LINE (ปรับปรุงให้รับค่า Message/Status เพิ่มเติม)
+# ฟังก์ชันแจ้งเตือน LINE (ส่งสถานะการอนุมัติ/ปฏิเสธกลับได้)
 def send_line_notification(booking_id, resource, name, dept, t_start, t_end, purpose, destination, status_text="ส่งคำขอใหม่"):
     render_url = "https://line-booking-system.onrender.com/notify"
     
-    # แปลง datetime เป็น string ถ้าจำเป็น
+    # แปลง datetime เป็น string สำหรับการแสดงผลใน LINE
     start_str = t_start.strftime("%d/%m/%Y %H:%M") if isinstance(t_start, datetime) else t_start
     end_str = t_end.strftime("%H:%M") if isinstance(t_end, datetime) else t_end
 
@@ -25,7 +25,7 @@ def send_line_notification(booking_id, resource, name, dept, t_start, t_end, pur
         "dept": dept,
         "date": start_str,
         "end_date": end_str,
-        "purpose": f"[{status_text}] {purpose}" # ส่งสถานะกำกับไปในหัวข้อวัตถุประสงค์
+        "purpose": f"[{status_text}] {purpose}" 
     }
     
     try:
@@ -33,7 +33,7 @@ def send_line_notification(booking_id, resource, name, dept, t_start, t_end, pur
     except:
         pass
 
-# --- 2. ฟังก์ชันลบข้อมูลอัตโนมัติ ---
+# --- 2. ฟังก์ชันลบข้อมูลอัตโนมัติ (จบงานเกิน 24 ชม.) ---
 def auto_delete_old_bookings():
     threshold_time = (datetime.now() - timedelta(hours=24)).isoformat()
     try:
@@ -41,7 +41,7 @@ def auto_delete_old_bookings():
     except:
         pass
 
-# --- 3. ตั้งค่าหน้าจอ ---
+# --- 3. ตั้งค่าหน้าจอและ Sidebar ---
 st.set_page_config(page_title="ระบบจองรถ & ห้องประชุม", layout="wide")
 LOGO_URL = "https://lh3.googleusercontent.com/d/1zCjSjSbCO-mbsaGoDI6g0G-bfmyVfqFV"
 st.sidebar.image(LOGO_URL, use_container_width=True)
@@ -76,12 +76,13 @@ if choice == "📝 จองใหม่":
     if st.button("ยืนยันการส่งคำขอจอง"):
         if not name or not phone or not reason or not dept:
             st.warning("⚠️ กรุณากรอกข้อมูลให้ครบถ้วน")
-        # 2. เพิ่มเงื่อนไขห้ามจองย้อนหลัง
+        # เงื่อนไขห้ามจองย้อนหลัง
         elif t_start < (datetime.now() - timedelta(minutes=5)):
             st.error("❌ ห้ามจองเวลาย้อนหลัง")
         elif t_start >= t_end:
             st.error("❌ เวลาเริ่มต้นต้องก่อนเวลาสิ้นสุด")
         else:
+            # เช็คเวลาซ้อน
             check_res = supabase.table("bookings").select("*").eq("resource", res).eq("status", "Approved").execute()
             df_check = pd.DataFrame(check_res.data)
             is_overlap = False
@@ -124,7 +125,7 @@ elif choice == "🔑 Admin (อนุมัติ)":
                 with st.container(border=True):
                     col1, col2, col3 = st.columns([3, 2, 2])
                     with col1:
-                        # 3.Admin แก้ไขข้อมูลได้ที่นี่เลย
+                        # Admin แก้ไขข้อมูลได้ก่อนอนุมัติ
                         edit_res = st.text_input("รายการ", item['resource'], key=f"res_{item['id']}")
                         edit_req = st.text_input("ผู้ขอ", item['requester'], key=f"req_{item['id']}")
                         edit_dept = st.text_input("แผนก", item['dept'], key=f"dept_{item['id']}")
@@ -151,7 +152,7 @@ elif choice == "🔑 Admin (อนุมัติ)":
     elif admin_pw != "":
         st.error("❌ รหัสผ่านไม่ถูกต้อง")
 
-# --- หน้าตารางงาน (แสดงตาราง + ฟังก์ชันแก้ไข) ---
+# --- หน้าตารางงาน (คืนค่าหัวข้อภาษาไทย/อังกฤษ) ---
 elif choice == "📅 ตารางงาน (Real-time)":
     st.subheader("📅 ตารางงานปัจจุบันและล่วงหน้า")
     view_cat = st.radio("เลือกประเภทที่จะแสดง", ["ทั้งหมด", "รถยนต์", "ห้องประชุม"], horizontal=True)
@@ -162,7 +163,7 @@ elif choice == "📅 ตารางงาน (Real-time)":
     if df.empty:
         st.info("ขณะนี้ไม่มีรายการจอง")
     else:
-        # ส่วนแสดงผลตารางเดิม
+        # กรองข้อมูลตามประเภท
         if view_cat == "รถยนต์":
             car_list = ["Civic (ตุ้ม)", "Civic (บอล)", "Camry (เนก)", "MG ขับเอง"]
             df = df[df['resource'].isin(car_list)]
@@ -174,11 +175,21 @@ elif choice == "📅 ตารางงาน (Real-time)":
             df_show = df.copy().reset_index(drop=True)
             df_show.index += 1
             df_show.insert(0, 'ลำดับ/No.', df_show.index)
+            
+            # จัดรูปแบบวันที่ก่อนแสดงผล
             df_show['start_time'] = pd.to_datetime(df_show['start_time']).dt.strftime('%d/%m/%Y %H:%M')
             df_show['end_time'] = pd.to_datetime(df_show['end_time']).dt.strftime('%d/%m/%Y %H:%M')
-            st.dataframe(df_show[['ลำดับ/No.', 'resource', 'start_time', 'end_time', 'requester', 'purpose', 'destination']], use_container_width=True)
+            
+            # คืนค่าชื่อหัวข้อภาษาไทย/อังกฤษ ตามความต้องการเดิม
+            df_display = df_show[['ลำดับ/No.', 'resource', 'start_time', 'end_time', 'requester', 'purpose', 'destination']]
+            df_display.columns = [
+                'ลำดับ / No.', 'รายการ / Resource', 'เวลาเริ่ม / Start Time', 
+                'เวลาสิ้นสุด / End Time', 'ผู้จอง / Name', 'วัตถุประสงค์ / Purpose', 'ปลายทาง / Destination'
+            ]
+            
+            st.dataframe(df_display, use_container_width=True)
 
-            # 3.เพิ่มส่วนแก้ไขข้อมูลในหน้าตาราง
+            # ส่วนแก้ไขข้อมูลในหน้าตาราง (Admin Only)
             st.markdown("---")
             st.subheader("🛠️ แก้ไขข้อมูล (Admin Only)")
             with st.expander("คลิกเพื่อแก้ไขรายการ"):
@@ -188,10 +199,10 @@ elif choice == "📅 ตารางงาน (Real-time)":
                 col_e1, col_e2 = st.columns(2)
                 new_res = col_e1.text_input("ทรัพยากร", selected_item['resource'])
                 new_req = col_e1.text_input("ชื่อผู้จอง", selected_item['requester'])
-                new_start = col_e2.text_input("เวลาเริ่ม", selected_item['start_time'])
-                new_end = col_e2.text_input("เวลาสิ้นสุด", selected_item['end_time'])
+                new_start = col_e2.text_input("เวลาเริ่ม (ISO)", selected_item['start_time'])
+                new_end = col_e2.text_input("เวลาสิ้นสุด (ISO)", selected_item['end_time'])
                 
-                new_pw = st.text_input("ใส่รหัสผ่านเพื่อบันทึก", type="password")
+                new_pw = st.text_input("ใส่รหัสผ่านเพื่อบันทึก", type="password", key="edit_pw_table")
                 if st.button("💾 บันทึกการแก้ไข"):
                     if new_pw == "1234":
                         update_vals = {"resource": new_res, "requester": new_req, "start_time": new_start, "end_time": new_end}
