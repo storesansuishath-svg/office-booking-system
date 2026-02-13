@@ -221,7 +221,7 @@ elif choice == "📅 ตารางงาน (Real-time)":
                         else: st.error("รหัสผ่านไม่ถูกต้อง")
                     
                     if b_del.form_submit_button("🗑️ ลบรายการ"):
-                        if pw == "1234":
+                        if pw == "s1234":
                             supabase.table("bookings").delete().eq("id", edit_id).execute()
                             st.rerun()
                         else: st.error("รหัสผ่านไม่ถูกต้อง")
