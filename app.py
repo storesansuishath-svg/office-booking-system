@@ -10,11 +10,10 @@ SUPABASE_URL = "https://qejqynbxdflwebzzwfzu.supabase.co"
 SUPABASE_KEY = "sb_publishable_hvNQEPvuEAlXfVeCzpy7Ug_kzvihQqq"
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-# ฟังก์ชันแจ้งเตือน LINE (ส่งสถานะการอนุมัติ/ปฏิเสธกลับได้)
+# ฟังก์ชันแจ้งเตือน LINE
 def send_line_notification(booking_id, resource, name, dept, t_start, t_end, purpose, destination, status_text="ส่งคำขอใหม่"):
     render_url = "https://line-booking-system.onrender.com/notify"
     
-    # แปลง datetime เป็น string สำหรับการแสดงผลใน LINE
     start_str = t_start.strftime("%d/%m/%Y %H:%M") if isinstance(t_start, datetime) else t_start
     end_str = t_end.strftime("%H:%M") if isinstance(t_end, datetime) else t_end
 
@@ -76,13 +75,11 @@ if choice == "📝 จองใหม่":
     if st.button("ยืนยันการส่งคำขอจอง"):
         if not name or not phone or not reason or not dept:
             st.warning("⚠️ กรุณากรอกข้อมูลให้ครบถ้วน")
-        # เงื่อนไขห้ามจองย้อนหลัง
         elif t_start < (datetime.now() - timedelta(minutes=5)):
             st.error("❌ ห้ามจองเวลาย้อนหลัง")
         elif t_start >= t_end:
             st.error("❌ เวลาเริ่มต้นต้องก่อนเวลาสิ้นสุด")
         else:
-            # เช็คเวลาซ้อน
             check_res = supabase.table("bookings").select("*").eq("resource", res).eq("status", "Approved").execute()
             df_check = pd.DataFrame(check_res.data)
             is_overlap = False
@@ -96,118 +93,4 @@ if choice == "📝 จองใหม่":
                 st.error(f"❌ ไม่ว่าง: {res} ถูกจองไปแล้วในช่วงเวลานี้")
             else:
                 data = {"resource": res, "requester": name, "phone": phone, "dept": dept, 
-                        "start_time": t_start.isoformat(), "end_time": t_end.isoformat(), 
-                        "purpose": reason, "destination": destination, "status": "Pending"}
-                response = supabase.table("bookings").insert(data).execute()
-                if response.data:
-                    booking_id = response.data[0]['id']
-                    send_line_notification(booking_id, res, name, dept, t_start, t_end, reason, destination, "Pending")
-                st.success("✅ ส่งคำขอเรียบร้อยแล้ว!")
-
-elif choice == "🔑 Admin (อนุมัติ)":
-    st.subheader("🔑 ระบบจัดการการจอง (Admin Dashboard)")
-    admin_pw = st.text_input("🔒 ใส่รหัสผ่าน Admin", type="password")
-    
-    if admin_pw == "1234":
-        st.success("Login สำเร็จ!")
-        st.markdown("---")
-        try:
-            res_pending = supabase.table("bookings").select("*").eq("status", "Pending").order("id").execute()
-            pending_items = res_pending.data
-        except Exception as e:
-            st.error(f"Error: {e}")
-            pending_items = []
-
-        if not pending_items:
-            st.info("✅ ไม่มีรายการรออนุมัติ")
-        else:
-            for item in pending_items:
-                with st.container(border=True):
-                    col1, col2, col3 = st.columns([3, 2, 2])
-                    with col1:
-                        # Admin แก้ไขข้อมูลได้ก่อนอนุมัติ
-                        edit_res = st.text_input("รายการ", item['resource'], key=f"res_{item['id']}")
-                        edit_req = st.text_input("ผู้ขอ", item['requester'], key=f"req_{item['id']}")
-                        edit_dept = st.text_input("แผนก", item['dept'], key=f"dept_{item['id']}")
-                    with col2:
-                        edit_start = st.text_input("เริ่ม", item['start_time'], key=f"start_{item['id']}")
-                        edit_end = st.text_input("สิ้นสุด", item['end_time'], key=f"end_{item['id']}")
-                        edit_purp = st.text_area("เหตุผล", item['purpose'], key=f"purp_{item['id']}")
-                    with col3:
-                        st.write("")
-                        btn_approve, btn_reject = st.columns(2)
-                        if btn_approve.button("✅", key=f"app_{item['id']}", use_container_width=True):
-                            up_data = {"resource": edit_res, "requester": edit_req, "dept": edit_dept, "start_time": edit_start, "end_time": edit_end, "purpose": edit_purp, "status": "Approved"}
-                            supabase.table("bookings").update(up_data).eq("id", item['id']).execute()
-                            # แจ้งเตือนเมื่ออนุมัติ
-                            send_line_notification(item['id'], edit_res, edit_req, edit_dept, edit_start, edit_end, edit_purp, "-", "Approved")
-                            st.toast("อนุมัติเรียบร้อย")
-                            st.rerun()
-
-                        if btn_reject.button("❌", key=f"rej_{item['id']}", use_container_width=True):
-                            supabase.table("bookings").update({"status": "Rejected"}).eq("id", item['id']).execute()
-                            # แจ้งเตือนเมื่อปฏิเสธ
-                            send_line_notification(item['id'], edit_res, edit_req, edit_dept, edit_start, edit_end, edit_purp, "-", "Rejected")
-                            st.rerun()
-    elif admin_pw != "":
-        st.error("❌ รหัสผ่านไม่ถูกต้อง")
-
-# --- หน้าตารางงาน (คืนค่าหัวข้อภาษาไทย/อังกฤษ) ---
-elif choice == "📅 ตารางงาน (Real-time)":
-    st.subheader("📅 ตารางงานปัจจุบันและล่วงหน้า")
-    view_cat = st.radio("เลือกประเภทที่จะแสดง", ["ทั้งหมด", "รถยนต์", "ห้องประชุม"], horizontal=True)
-    now = datetime.now().isoformat()
-    res = supabase.table("bookings").select("*").eq("status", "Approved").gt("end_time", now).order("start_time").execute()
-    df = pd.DataFrame(res.data)
-    
-    if df.empty:
-        st.info("ขณะนี้ไม่มีรายการจอง")
-    else:
-        # กรองข้อมูลตามประเภท
-        if view_cat == "รถยนต์":
-            car_list = ["Civic (ตุ้ม)", "Civic (บอล)", "Camry (เนก)", "MG ขับเอง"]
-            df = df[df['resource'].isin(car_list)]
-        elif view_cat == "ห้องประชุม":
-            room_list = ["ห้องชั้น 1 (ห้องใหญ่)", "ห้องชั้น 2", "ห้อง VIP", "ห้องชั้นลอย", "ห้อง Production"]
-            df = df[df['resource'].isin(room_list)]
-
-        if not df.empty:
-            df_show = df.copy().reset_index(drop=True)
-            df_show.index += 1
-            df_show.insert(0, 'ลำดับ/No.', df_show.index)
-            
-            # จัดรูปแบบวันที่ก่อนแสดงผล
-            df_show['start_time'] = pd.to_datetime(df_show['start_time']).dt.strftime('%d/%m/%Y %H:%M')
-            df_show['end_time'] = pd.to_datetime(df_show['end_time']).dt.strftime('%d/%m/%Y %H:%M')
-            
-            # คืนค่าชื่อหัวข้อภาษาไทย/อังกฤษ ตามความต้องการเดิม
-            df_display = df_show[['ลำดับ/No.', 'resource', 'start_time', 'end_time', 'requester', 'purpose', 'destination']]
-            df_display.columns = [
-                'ลำดับ / No.', 'รายการ / Resource', 'เวลาเริ่ม / Start Time', 
-                'เวลาสิ้นสุด / End Time', 'ผู้จอง / Name', 'วัตถุประสงค์ / Purpose', 'ปลายทาง / Destination'
-            ]
-            
-            st.dataframe(df_display, use_container_width=True)
-
-            # ส่วนแก้ไขข้อมูลในหน้าตาราง (Admin Only)
-            st.markdown("---")
-            st.subheader("🛠️ แก้ไขข้อมูล (Admin Only)")
-            with st.expander("คลิกเพื่อแก้ไขรายการ"):
-                edit_id = st.selectbox("เลือก ID ที่ต้องการแก้ไข", df['id'])
-                selected_item = df[df['id'] == edit_id].iloc[0]
-                
-                col_e1, col_e2 = st.columns(2)
-                new_res = col_e1.text_input("ทรัพยากร", selected_item['resource'])
-                new_req = col_e1.text_input("ชื่อผู้จอง", selected_item['requester'])
-                new_start = col_e2.text_input("เวลาเริ่ม (ISO)", selected_item['start_time'])
-                new_end = col_e2.text_input("เวลาสิ้นสุด (ISO)", selected_item['end_time'])
-                
-                new_pw = st.text_input("ใส่รหัสผ่านเพื่อบันทึก", type="password", key="edit_pw_table")
-                if st.button("💾 บันทึกการแก้ไข"):
-                    if new_pw == "1234":
-                        update_vals = {"resource": new_res, "requester": new_req, "start_time": new_start, "end_time": new_end}
-                        supabase.table("bookings").update(update_vals).eq("id", edit_id).execute()
-                        st.success("แก้ไขข้อมูลสำเร็จ!")
-                        st.rerun()
-                    else:
-                        st.error("รหัสผ่านไม่ถูกต้อง")
+                        "start_time": t_start.isoformat(), "end_time": t_end.isoformat(),
