@@ -43,6 +43,23 @@ def auto_delete_old_bookings():
 
 # --- 3. ตั้งค่าหน้าจอและ Sidebar ---
 st.set_page_config(page_title="ระบบจองรถ & ห้องประชุม", layout="wide")
+# --- ส่วนการปรับแต่งสี (CSS) ---
+st.markdown("""
+    <style>
+    /* เปลี่ยนสีพื้นหลังของช่อง Input, Text Area และ Selectbox */
+    .stTextInput input, .stTextArea textarea, .stSelectbox div[data-baseweb="select"], .stNumberInput input {
+        background-color: #E3F2FD !important; /* สีฟ้าอ่อน */
+        color: #0D47A1 !important;           /* สีตัวอักษรน้ำเงินเข้มเพื่อให้ตัดกับพื้นหลัง */
+        border: 1px solid #BBDEFB !important;
+    }
+
+    /* ปรับสีตอนเอาเมาส์ไปวาง (Hover) หรือกำลังพิมพ์ (Focus) */
+    .stTextInput input:focus, .stTextArea textarea:focus {
+        border: 2px solid #2196F3 !important;
+        background-color: #E1F5FE !important;
+    }
+    </style>
+""", unsafe_allow_html=True)
 LOGO_URL = "https://lh3.googleusercontent.com/d/1zCjSjSbCO-mbsaGoDI6g0G-bfmyVfqFV"
 st.sidebar.image(LOGO_URL, use_container_width=True)
 st.sidebar.markdown("---")
