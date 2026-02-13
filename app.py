@@ -118,7 +118,7 @@ elif choice == "🔑 Admin (อนุมัติ)":
     st.subheader("🔑 ระบบจัดการการจอง (Admin Dashboard)")
     admin_pw = st.text_input("🔒 ใส่รหัสผ่าน Admin", type="password")
     
-    if admin_pw == "1234":
+    if admin_pw == "s1234":
         st.success("Login สำเร็จ!")
         st.markdown("---")
         try:
