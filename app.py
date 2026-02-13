@@ -84,4 +84,12 @@ if choice == "📝 จองใหม่":
             df_check = pd.DataFrame(check_res.data)
             is_overlap = False
             if not df_check.empty:
-                df_check['start_time'] = pd.to_datetime(df_check
+                df_check['start_time'] = pd.to_datetime(df_check['start_time']).dt.tz_localize(None)
+                df_check['end_time'] = pd.to_datetime(df_check['end_time']).dt.tz_localize(None)
+                overlap = df_check[~((df_check['start_time'] >= t_end) | (df_check['end_time'] <= t_start))]
+                if not overlap.empty: is_overlap = True
+
+            if is_overlap:
+                st.error(f"❌ ไม่ว่าง: {res} ถูกจองไปแล้วในช่วงเวลานี้")
+            else:
+                # แก้ไข Syntax Error: ปิด
