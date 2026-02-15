@@ -1,247 +1,203 @@
-import streamlit as st
-import pandas as pd
+from fastapi import FastAPI, Request, HTTPException
+from linebot import LineBotApi, WebhookHandler
+from linebot.models import (
+    MessageEvent, TextMessage, TextSendMessage, FlexSendMessage,
+    QuickReply, QuickReplyButton, MessageAction, PostbackEvent, PostbackAction
+)
 from supabase import create_client
 from datetime import datetime, timedelta
-import requests
-import json
+from urllib.parse import parse_qsl
+import os
 
-# --- 1. การเชื่อมต่อ Supabase ---
-SUPABASE_URL = "https://qejqynbxdflwebzzwfzu.supabase.co" 
+app = FastAPI()
+
+# --- 1. ตั้งค่า LINE & SUPABASE ---
+LINE_ACCESS_TOKEN = "ILJVHrD24hZCe/stNR6wKxglGerAEtefHwB0HlDzq2vx5zc+hx0JoS2fDQe6BFzsOCwMD47HldTFuCBve9JRa1uAlAuq24sK2Iv/C5T/+p8Vkh1ppr3MKOb0ghP9MGO1kVj4UmgSzdyrI8P0vKHprgdB04t89/1O/w1cDnyilFU="
+LINE_SECRET = "92765784656c2d17a334add0233d9e2f"
+SUPABASE_URL = "https://qejqynbxdflwebzzwfzu.supabase.co"
 SUPABASE_KEY = "sb_publishable_hvNQEPvuEAlXfVeCzpy7Ug_kzvihQqq"
+
+line_bot_api = LineBotApi(LINE_ACCESS_TOKEN)
+handler = WebhookHandler(LINE_SECRET)
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-# ฟังก์ชันแจ้งเตือน LINE (ปรับให้รองรับสถานะ)
-def send_line_notification(booking_id, resource, name, dept, t_start, t_end, purpose, destination, status_text="ส่งคำขอใหม่"):
-    render_url = "https://line-booking-system.onrender.com/notify"
-    
-    # ตรวจสอบประเภทข้อมูลเวลาก่อนแปลงเป็น String
-    start_str = t_start.strftime("%d/%m/%Y %H:%M") if isinstance(t_start, datetime) else str(t_start)
-    end_str = t_end.strftime("%H:%M") if isinstance(t_end, datetime) else str(t_end)
+# --- 2. รายชื่อ Admin ---
+ADMIN_IDS = ["Ub5588daf37957fe7625abce16bd8bb8e","U39cfc5182354b7fe5174f181983e4d1a"]
 
-    payload = {
-        "id": booking_id,
-        "resource": resource,
-        "name": name,
-        "dept": dept,
-        "date": start_str,
-        "end_date": end_str,
-        "purpose": f"[{status_text}] {purpose}" 
-    }
-    
-    try:
-        requests.post(render_url, json=payload, timeout=5)
-    except Exception as e:
-        print(f"LINE Error: {e}")
-
-# --- 2. ฟังก์ชันลบข้อมูลอัตโนมัติ (จบงานเกิน 24 ชม.) ---
-def auto_delete_old_bookings():
-    threshold_time = (datetime.now() - timedelta(hours=24)).isoformat()
-    try:
-        supabase.table("bookings").delete().lt("end_time", threshold_time).execute()
-    except:
-        pass
-
-# --- 3. ตั้งค่าหน้าจอและ Sidebar ---
-st.set_page_config(page_title="ระบบจองรถ & ห้องประชุม", layout="wide")
-# --- ส่วนการปรับแต่งสี (CSS) ---
-st.markdown("""
-    <style>
-    /* เปลี่ยนสีพื้นหลังของช่อง Input, Text Area และ Selectbox */
-    .stTextInput input, .stTextArea textarea, .stSelectbox div[data-baseweb="select"], .stNumberInput input {
-        background-color: #E3F2FD !important; /* สีฟ้าอ่อน */
-        color: #0D47A1 !important;           /* สีตัวอักษรน้ำเงินเข้มเพื่อให้ตัดกับพื้นหลัง */
-        border: 1px solid #BBDEFB !important;
-    }
-
-    /* ปรับสีตอนเอาเมาส์ไปวาง (Hover) หรือกำลังพิมพ์ (Focus) */
-    .stTextInput input:focus, .stTextArea textarea:focus {
-        border: 2px solid #2196F3 !important;
-        background-color: #E1F5FE !important;
-    }
-    </style>
-""", unsafe_allow_html=True)
-LOGO_URL = "https://lh3.googleusercontent.com/d/1zCjSjSbCO-mbsaGoDI6g0G-bfmyVfqFV"
-st.sidebar.image(LOGO_URL, use_container_width=True)
-st.sidebar.markdown("---")
-
-auto_delete_old_bookings()
-
-st.title("ระบบจองรถยนต์และห้องประชุม Online")
-menu = ["📝 จองใหม่", "📅 ตารางงาน (Real-time)", "🔑 Admin (อนุมัติ)"]
-choice = st.sidebar.selectbox("เมนู", menu)
-
-# --- หน้าจองใหม่ ---
-if choice == "📝 จองใหม่":
-    st.subheader("รายละเอียดการจอง")
-    col1, col2 = st.columns(2)
-    with col1:
-        cat = st.radio("ประเภททรัพยากร", ["รถยนต์", "ห้องประชุม"])
-        if cat == "รถยนต์":
-            res = st.selectbox("เลือกคัน", ["Civic (ตุ้ม)", "Civic (บอล)", "Camry (เนก)", "MG ขับเอง"])
-            destination = st.text_input("สถานที่ปลายทาง", placeholder="เช่น บริษัท ABC")
-        else:
-            res = st.selectbox("เลือกห้อง", ["ห้องชั้น 1 (ห้องใหญ่)", "ห้องชั้น 2", "ห้อง VIP", "ห้องชั้นลอย", "ห้อง Production"])
-            destination = "Office"
-        name = st.text_input("ชื่อผู้จอง")
-        phone = st.text_input("เบอร์โทรศัพท์")
-        dept = st.text_input("แผนก")
-    with col2:
-        t_start = st.datetime_input("เวลาเริ่ม", datetime.now())
-        t_end = st.datetime_input("เวลาสิ้นสุด", datetime.now() + timedelta(hours=1))
-        reason = st.text_area("วัตถุประสงค์การใช้งาน")
-
-    if st.button("ยืนยันการส่งคำขอจอง"):
-        if not name or not phone or not reason or not dept:
-            st.warning("⚠️ กรุณากรอกข้อมูลให้ครบถ้วน")
-        elif t_start < (datetime.now() - timedelta(minutes=5)):
-            st.error("❌ ห้ามจองเวลาย้อนหลัง")
-        elif t_start >= t_end:
-            st.error("❌ เวลาเริ่มต้นต้องก่อนเวลาสิ้นสุด")
-        else:
-            # เช็คเวลาซ้อน
-            check_res = supabase.table("bookings").select("*").eq("resource", res).eq("status", "Approved").execute()
-            df_check = pd.DataFrame(check_res.data)
-            is_overlap = False
-            if not df_check.empty:
-                df_check['start_time'] = pd.to_datetime(df_check['start_time']).dt.tz_localize(None)
-                df_check['end_time'] = pd.to_datetime(df_check['end_time']).dt.tz_localize(None)
-                overlap = df_check[~((df_check['start_time'] >= t_end) | (df_check['end_time'] <= t_start))]
-                if not overlap.empty:
-                    is_overlap = True
-
-            if is_overlap:
-                st.error(f"❌ ไม่ว่าง: {res} ถูกจองไปแล้วในช่วงเวลานี้")
-            else:
-                # แก้ไข Syntax Error: ปิดปีกกาให้ครบถ้วนสมบูรณ์
-                data = {
-                    "resource": res, 
-                    "requester": name, 
-                    "phone": phone, 
-                    "dept": dept, 
-                    "start_time": t_start.isoformat(), 
-                    "end_time": t_end.isoformat(), 
-                    "purpose": reason, 
-                    "destination": destination, 
-                    "status": "Pending"
-                }
-                response = supabase.table("bookings").insert(data).execute()
-                if response.data:
-                    booking_id = response.data[0]['id']
-                    send_line_notification(booking_id, res, name, dept, t_start, t_end, reason, destination, "Pending")
-                    st.success("✅ ส่งคำขอเรียบร้อยแล้ว!")
-
-# --- หน้า Admin (อนุมัติ) ---
-elif choice == "🔑 Admin (อนุมัติ)":
-    st.subheader("🔑 ระบบจัดการการจอง (Admin Dashboard)")
-    admin_pw = st.text_input("🔒 ใส่รหัสผ่าน Admin", type="password")
-    
-    if admin_pw == "s1234":
-        st.success("Login สำเร็จ!")
-        st.markdown("---")
+# --- 3. ฟังก์ชันสร้างตารางสรุป (Flex Message) ---
+def create_schedule_flex(title, data_rows, color="#0D47A1"):
+    if not data_rows:
+        return TextSendMessage(text=f"✅ ไม่มีรายการจองสำหรับ {title} ในขณะนี้ครับ")
+    contents = [
+        {"type": "text", "text": title, "weight": "bold", "size": "xl", "color": color},
+        {"type": "separator", "margin": "md"}
+    ]
+    for i, row in enumerate(data_rows):
         try:
-            res_pending = supabase.table("bookings").select("*").eq("status", "Pending").order("id").execute()
-            pending_items = res_pending.data
-        except Exception as e:
-            st.error(f"Error: {e}")
-            pending_items = []
+            t_start = datetime.fromisoformat(row['start_time']).strftime('%H:%M')
+            t_end = datetime.fromisoformat(row['end_time']).strftime('%H:%M')
+            date_str = datetime.fromisoformat(row['start_time']).strftime('%d/%m')
+        except: t_start, t_end, date_str = "-", "-", "-"
+        contents.append({
+            "type": "box", "layout": "vertical", "margin": "md",
+            "contents": [
+                {"type": "text", "text": f"{i+1}. {row['resource']}", "weight": "bold", "color": "#333333"},
+                {"type": "text", "text": f"📅 {date_str} | ⏰ {t_start}-{t_end}", "size": "sm", "color": color},
+                {"type": "text", "text": f"👤 {row['requester']} ({row.get('dept', '-')})", "size": "xs", "color": "#666666"},
+                {"type": "text", "text": f"📝 {row.get('purpose', '-')}", "size": "xs", "color": "#666666", "wrap": True}
+            ]
+        })
+        contents.append({"type": "separator", "margin": "sm"})
+    return FlexSendMessage(alt_text=f"ตาราง {title}", contents={"type": "bubble", "body": {"type": "box", "layout": "vertical", "contents": contents}})
 
-        if not pending_items:
-            st.info("✅ ไม่มีรายการรออนุมัติ")
-        else:
-            for item in pending_items:
-                with st.container(border=True):
-                    col1, col2, col3 = st.columns([3, 2, 2])
-                    with col1:
-                        # Admin สามารถแก้ไขข้อมูลได้ทันทีก่อนอนุมัติ
-                        edit_res = st.text_input("รายการ", str(item['resource']), key=f"res_{item['id']}")
-                        edit_req = st.text_input("ผู้ขอ", str(item['requester']), key=f"req_{item['id']}")
-                        edit_dept = st.text_input("แผนก", str(item['dept']), key=f"dept_{item['id']}")
-                    with col2:
-                        edit_start = st.text_input("เริ่ม", str(item['start_time']), key=f"start_{item['id']}")
-                        edit_end = st.text_input("สิ้นสุด", str(item['end_time']), key=f"end_{item['id']}")
-                        edit_purp = st.text_area("เหตุผล", str(item['purpose']), key=f"purp_{item['id']}")
-                    with col3:
-                        st.write("")
-                        btn_app, btn_rej, btn_can = st.columns(3)
-                        # ปุ่มอนุมัติ
-                        if btn_app.button("✅", key=f"app_{item['id']}", help="อนุมัติ", use_container_width=True):
-                            up_data = {"resource": edit_res, "requester": edit_req, "dept": edit_dept, "start_time": edit_start, "end_time": edit_end, "purpose": edit_purp, "status": "Approved"}
-                            supabase.table("bookings").update(up_data).eq("id", item['id']).execute()
-                            send_line_notification(item['id'], edit_res, edit_req, edit_dept, edit_start, edit_end, edit_purp, "-", "Approved")
-                            st.rerun()
-                        # ปุ่มปฏิเสธ
-                        if btn_rej.button("❌", key=f"rej_{item['id']}", help="ปฏิเสธ", use_container_width=True):
-                            supabase.table("bookings").update({"status": "Rejected"}).eq("id", item['id']).execute()
-                            send_line_notification(item['id'], edit_res, edit_req, edit_dept, edit_start, edit_end, edit_purp, "-", "Rejected")
-                            st.rerun()
-                        # ปุ่มลบรายการ
-                        if btn_can.button("🗑️", key=f"can_{item['id']}", help="ลบรายการ", use_container_width=True):
-                            supabase.table("bookings").delete().eq("id", item['id']).execute()
-                            st.rerun()
-    elif admin_pw != "":
-        st.error("❌ รหัสผ่านไม่ถูกต้อง")
+# --- 4. ฟังก์ชันสร้างปุ่มอนุมัติ (Flex Message) ---
+def create_approval_flex(booking_id, data):
+    return FlexSendMessage(
+        alt_text="มีคำขอจองใหม่",
+        contents={
+            "type": "bubble",
+            "body": {
+                "type": "box", "layout": "vertical",
+                "contents": [
+                    {"type": "text", "text": "🔔 คำขอจองใหม่", "weight": "bold", "color": "#E65100"},
+                    {"type": "text", "text": f"ID: {booking_id}", "size": "xs", "color": "#aaaaaa"},
+                    {"type": "separator", "margin": "md"},
+                    {"type": "text", "text": data.get('resource', '-'), "weight": "bold", "size": "lg", "margin": "md"},
+                    {"type": "text", "text": f"👤 {data.get('name', '-')} ({data.get('dept', '-')})", "size": "sm"},
+                    {"type": "text", "text": f"📅 {data.get('date', '-')} - {data.get('end_date', '-')}", "size": "sm", "color": "#1E88E5"},
+                    {"type": "text", "text": f"📝 {data.get('purpose', '-')}", "size": "sm", "wrap": True}
+                ]
+            },
+            "footer": {
+                "type": "box", "layout": "horizontal", "spacing": "sm",
+                "contents": [
+                    {"type": "button", "style": "primary", "color": "#2E7D32", "action": PostbackAction(label="✅ อนุมัติ", data=f"action=approve&id={booking_id}&user={data.get('name')}")},
+                    {"type": "button", "style": "primary", "color": "#C62828", "action": PostbackAction(label="❌ ปฏิเสธ", data=f"action=reject&id={booking_id}&user={data.get('name')}")}
+                ]
+            }
+        }
+    )
 
-# --- หน้าตารางงาน (Real-time) ---
-elif choice == "📅 ตารางงาน (Real-time)":
-    st.subheader("📅 ตารางงานปัจจุบันและล่วงหน้า")
-    view_cat = st.radio("เลือกประเภทที่จะแสดง", ["ทั้งหมด", "รถยนต์", "ห้องประชุม"], horizontal=True)
-    now_iso = datetime.now().isoformat()
-    # ดึงข้อมูลที่อนุมัติแล้วและยังไม่จบงาน
-    res_db = supabase.table("bookings").select("*").eq("status", "Approved").gt("end_time", now_iso).order("start_time").execute()
-    df = pd.DataFrame(res_db.data)
+# --- 5. Webhook Handler ---
+@app.post("/callback")
+async def callback(request: Request):
+    signature = request.headers.get('X-Line-Signature')
+    body = await request.body()
+    try:
+        handler.handle(body.decode('utf-8'), signature)
+    except Exception as e:
+        print(f"Error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+    return 'OK'
+
+# --- 6. จัดการข้อความ Text ---
+@handler.add(MessageEvent, message=TextMessage)
+def handle_message(event):
+    text = event.message.text.strip()
     
-    if df.empty:
-        st.info("ขณะนี้ไม่มีรายการจอง")
+    quick_menu = QuickReply(items=[
+        QuickReplyButton(action=MessageAction(label="🚗 ตารางรถ", text="ดูตารางรถ")),
+        QuickReplyButton(action=MessageAction(label="🏢 ตารางห้อง", text="ดูตารางห้อง")),
+        QuickReplyButton(action=MessageAction(label="📝 จองใหม่", text="จอง")),
+        QuickReplyButton(action=MessageAction(label="⏳ รออนุมัติ", text="รออนุมัติ"))
+    ])
+
+    if text in ["ดู", "เมนู", "สวัสดี", "ทัก", "หน้าหลัก"]:
+        line_bot_api.reply_message(event.reply_token, TextSendMessage(text="เลือกรายการที่ต้องการครับ 👇", quick_reply=quick_menu))
+
+    elif text == "ดูตารางรถ":
+        now = datetime.now().isoformat()
+        car_list = ["Civic (ตุ้ม)", "Civic (บอล)", "Camry (เนก)", "MG ขับเอง"]
+        res = supabase.table("bookings").select("*").eq("status", "Approved").gt("end_time", now).in_("resource", car_list).order("start_time").execute()
+        line_bot_api.reply_message(event.reply_token, create_schedule_flex("ตารางรถ", res.data, "#1E88E5"))
+
+    elif text == "ดูตารางห้อง":
+        now = datetime.now().isoformat()
+        room_list = ["ห้องชั้น 1 (ห้องใหญ่)", "ห้องชั้น 2", "ห้อง VIP", "ห้องชั้นลอย", "ห้อง Production"]
+        res = supabase.table("bookings").select("*").eq("status", "Approved").gt("end_time", now).in_("resource", room_list).order("start_time").execute()
+        line_bot_api.reply_message(event.reply_token, create_schedule_flex("ตารางห้อง", res.data, "#43A047"))
+
+    elif text == "จอง":
+        url = "https://office-booking-system-hll8ub77ixfgmj2s4slbu4.streamlit.app/"
+        line_bot_api.reply_message(event.reply_token, TextSendMessage(text=f"กดลิงก์เพื่อจองครับ:\n{url}", quick_reply=quick_menu))
+
+    elif text == "เช็ค ID":
+        line_bot_api.reply_message(event.reply_token, TextSendMessage(text=f"ID ของคุณ: {event.source.user_id}"))
+
+    # --- ส่วนที่เพิ่มใหม่: เช็ค ID กลุ่ม ---
+    elif text == "เช็ค ID กลุ่ม":
+        if event.source.type == 'group':
+            group_id = event.source.group_id
+            line_bot_api.reply_message(event.reply_token, TextSendMessage(text=f"ID กลุ่มของคุณคือ:\n{group_id}"))
+        else:
+            line_bot_api.reply_message(event.reply_token, TextSendMessage(text="🚫 ต้องพิมพ์ใน 'กลุ่ม' เท่านั้นครับ"))
+
+    elif text == "รออนุมัติ":
+        if event.source.user_id in ADMIN_IDS:
+            res = supabase.table("bookings").select("*").eq("status", "Pending").execute()
+            if not res.data:
+                line_bot_api.reply_message(event.reply_token, TextSendMessage(text="✅ ไม่มีรายการรออนุมัติครับ", quick_reply=quick_menu))
+            else:
+                line_bot_api.reply_message(event.reply_token, TextSendMessage(text=f"มี {len(res.data)} รายการรออนุมัติครับ", quick_reply=quick_menu))
+        else:
+            line_bot_api.reply_message(event.reply_token, TextSendMessage(text="🚫 สำหรับ Admin เท่านั้นครับ", quick_reply=quick_menu))
+
+# --- 7. จัดการกดปุ่ม (Postback) ---
+@handler.add(PostbackEvent)
+def handle_postback(event):
+    if event.source.user_id not in ADMIN_IDS:
+        line_bot_api.reply_message(event.reply_token, TextSendMessage(text="🚫 ไม่มีสิทธิ์ครับ"))
+        return
+
+    data = dict(parse_qsl(event.postback.data))
+    action, booking_id, user_name = data.get('action'), data.get('id'), data.get('user')
+
+    if action and booking_id:
+        status = "Approved" if action == "approve" else "Rejected"
+        supabase.table("bookings").update({"status": status}).eq("id", booking_id).execute()
+        
+        msg_text = f"✅ อนุมัติคุณ {user_name} เรียบร้อย" if action == "approve" else f"❌ ปฏิเสธคุณ {user_name} แล้ว"
+        line_bot_api.reply_message(event.reply_token, TextSendMessage(text=msg_text))
+
+        # ส่งตารางล่าสุดหลังอนุมัติ (ใช้ broadcast ไปก่อนจนกว่าจะได้ ID กลุ่ม)
+        if action == "approve":
+            now_iso = datetime.now().isoformat()
+            res = supabase.table("bookings").select("*").eq("status", "Approved").gt("end_time", now_iso).order("start_time").execute()
+            line_bot_api.broadcast([
+                TextSendMessage(text="📢 นี่คือตารางงานล่าสุด"),
+                create_schedule_flex("📅 ตารางการใช้งานปัจจุบัน", res.data, "#2E7D32")
+            ])
+
+# --- 8. รับ Notify จาก Streamlit ---
+@app.post("/notify")
+async def notify_booking(request: Request):
+    data = await request.json()
+    mode = data.get("mode")
+    if mode == "all_schedule":
+        now = datetime.now().isoformat()
+        res = supabase.table("bookings").select("*").eq("status", "Approved").gt("end_time", now).order("start_time").execute()
+        line_bot_api.broadcast([
+            TextSendMessage(text="📢 นี่คือตารางงานล่าสุด"),
+            create_schedule_flex("📅 ตารางการใช้งานปัจจุบัน", res.data, "#2E7D32")
+        ])
     else:
-        # กรองข้อมูลตามประเภท
-        if view_cat == "รถยนต์":
-            df = df[df['resource'].isin(["Civic (ตุ้ม)", "Civic (บอล)", "Camry (เนก)", "MG ขับเอง"])]
-        elif view_cat == "ห้องประชุม":
-            df = df[df['resource'].isin(["ห้องชั้น 1 (ห้องใหญ่)", "ห้องชั้น 2", "ห้อง VIP", "ห้องชั้นลอย", "ห้อง Production"])]
+        line_bot_api.broadcast(create_approval_flex(data.get("id"), data))
+    return {"status": "success"}
 
-        if not df.empty:
-            df_show = df.copy().reset_index(drop=True)
-            df_show.index += 1
-            df_show.insert(0, 'ลำดับ/No.', df_show.index)
-            # จัดรูปแบบเวลาสำหรับการแสดงในตาราง
-            df_show['start_fmt'] = pd.to_datetime(df_show['start_time']).dt.strftime('%d/%m/%Y %H:%M')
-            df_show['end_fmt'] = pd.to_datetime(df_show['end_time']).dt.strftime('%d/%m/%Y %H:%M')
-            
-            # รักษาหัวข้อตารางภาษาไทย/อังกฤษ ตามรูปแบบเดิม
-            df_disp = df_show[['ลำดับ/No.', 'resource', 'start_fmt', 'end_fmt', 'requester', 'purpose', 'destination']]
-            df_disp.columns = ['ลำดับ / No.', 'รายการ / Resource', 'เวลาเริ่ม / Start Time', 'เวลาสิ้นสุด / End Time', 'ผู้จอง / Name', 'วัตถุประสงค์ / Purpose', 'ปลายทาง / Destination']
-            st.dataframe(df_disp, use_container_width=True)
+# --- 9. แจ้งเตือนล่วงหน้า 15 นาที ---
+@app.get("/check-reminders")
+def check_reminders():
+    now = datetime.now()
+    t_min = (now + timedelta(minutes=14)).isoformat()
+    t_max = (now + timedelta(minutes=16)).isoformat()
+    res = supabase.table("bookings").select("*").eq("status", "Approved").eq("reminder_sent", False).gte("start_time", t_min).lte("start_time", t_max).execute()
+    if res.data:
+        for item in res.data:
+            msg = f"⏰ แจ้งเตือนล่วงหน้า 15 นาที!\n\n🚗/🏢: {item['resource']}\n👤 ผู้จอง: {item['requester']}"
+            line_bot_api.broadcast(TextSendMessage(text=msg))
+            supabase.table("bookings").update({"reminder_sent": True}).eq("id", item['id']).execute()
+    return {"status": "checked"}
 
-            # --- ส่วนแก้ไขข้อมูลโดย Admin ---
-            st.markdown("---")
-            st.subheader("🛠️ แก้ไขข้อมูล (Admin Only)")
-            with st.expander("คลิกเพื่อแก้ไขรายการ"):
-                edit_id = st.selectbox("เลือก ID ที่ต้องการแก้ไข", df['id'].tolist(), key="sel_id_table")
-                # ดึงข้อมูลแถวที่เลือก
-                row = df[df['id'] == edit_id].iloc[0]
-                
-                with st.form("edit_form_table"):
-                    col_e1, col_e2 = st.columns(2)
-                    n_res = col_e1.text_input("รายการ / Resource", str(row['resource']))
-                    n_req = col_e1.text_input("ผู้จอง / Name", str(row['requester']))
-                    n_start = col_e2.text_input("เริ่ม (ISO Format)", str(row['start_time']))
-                    n_end = col_e2.text_input("สิ้นสุด (ISO Format)", str(row['end_time']))
-                    
-                    pw = st.text_input("ใส่รหัสผ่านเพื่อบันทึก (1234)", type="password")
-                    b_save, b_del, b_cls = st.columns(3)
-                    
-                    if b_save.form_submit_button("💾 บันทึก"):
-                        if pw == "1234":
-                            supabase.table("bookings").update({"resource": n_res, "requester": n_req, "start_time": n_start, "end_time": n_end}).eq("id", edit_id).execute()
-                            st.success("บันทึกข้อมูลเรียบร้อย!")
-                            st.rerun()
-                        else: st.error("รหัสผ่านไม่ถูกต้อง")
-                    
-                    if b_del.form_submit_button("🗑️ ลบรายการ"):
-                        if pw == "s1234":
-                            supabase.table("bookings").delete().eq("id", edit_id).execute()
-                            st.rerun()
-                        else: st.error("รหัสผ่านไม่ถูกต้อง")
-
-                    if b_cls.form_submit_button("✖️ ปิด"):
-                        st.rerun()
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8000)
