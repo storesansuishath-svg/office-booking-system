@@ -16,7 +16,7 @@ def send_line_notification(booking_id, resource, name, dept, t_start, t_end, pur
     start_str = t_start.strftime("%d/%m/%Y %H:%M") if isinstance(t_start, datetime) else str(t_start)
     end_str = t_end.strftime("%H:%M") if isinstance(t_end, datetime) else str(t_end)
 
-    # แก้ไขเฉพาะในฟังก์ชัน send_line_notification
+    # แก้ไขเฉพาะใน payload ของฟังก์ชัน send_line_notification
     payload = {
         "id": booking_id,
         "resource": resource,
@@ -29,7 +29,8 @@ def send_line_notification(booking_id, resource, name, dept, t_start, t_end, pur
     }
     
     try:
-        requests.post(render_url, json=payload, timeout=10)
+        # ปรับ timeout ให้มากขึ้นเผื่อ Server หลับครับ
+        requests.post(render_url, json=payload, timeout=15) 
     except Exception as e:
         st.error(f"การแจ้งเตือนขัดข้อง: {e}")
 
