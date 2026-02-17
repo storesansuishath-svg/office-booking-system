@@ -79,6 +79,7 @@ if choice == "📝 จองใหม่":
         if cat == "รถยนต์":
             res = st.selectbox("เลือกคัน", ["Civic (ตุ้ม)", "Civic (บอล)", "Camry (เนก)", "MG ขับเอง"])
             destination = st.text_input("สถานที่ปลายทาง", placeholder="เช่น บริษัท ABC")
+                  st.markdown(f"[📍 เปิด Google Maps เพื่อค้นหาเส้นทาง](https://www.google.com/maps)")
         else:
             res = st.selectbox("เลือกห้อง", ["ห้องชั้น 1 (ห้องใหญ่)", "ห้องชั้น 2", "ห้อง VIP", "ห้องชั้นลอย", "ห้อง Production"])
             destination = "Office"
