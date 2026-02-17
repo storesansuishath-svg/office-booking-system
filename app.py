@@ -10,9 +10,8 @@ SUPABASE_URL = "https://qejqynbxdflwebzzwfzu.supabase.co"
 SUPABASE_KEY = "sb_publishable_hvNQEPvuEAlXfVeCzpy7Ug_kzvihQqq"
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-# --- แก้ไขในฟังก์ชัน send_line_notification ---
-def send_line_notification(booking_id, resource, name, dept, t_start, t_end, purpose, destination, status_text="ส่งคำขอใหม่"):
-    render_url = "https://line-booking-system.onrender.com/notify"
+def send_line_notification(booking_id, resource, name, dept, t_start, t_end, purpose, destination, status_text="Pending"):
+    render_url = "https://line-booking-system.onrender.com/notify" # ตรวจสอบ URL นี้ให้ตรงกับ Render ของคุณ
     
     start_str = t_start.strftime("%d/%m/%Y %H:%M") if isinstance(t_start, datetime) else str(t_start)
     end_str = t_end.strftime("%H:%M") if isinstance(t_end, datetime) else str(t_end)
@@ -24,14 +23,14 @@ def send_line_notification(booking_id, resource, name, dept, t_start, t_end, pur
         "dept": dept,
         "date": start_str,
         "end_date": end_str,
-        "purpose": f"[{status_text}] {purpose}",
-        "destination": destination  # << เพิ่มบรรทัดนี้เข้าไปครับ
+        "purpose": purpose,
+        "destination": destination # << ต้องเพิ่มบรรทัดนี้ครับ ข้อมูลถึงจะไปครบ
     }
     
     try:
-        requests.post(render_url, json=payload, timeout=5)
+        requests.post(render_url, json=payload, timeout=10)
     except Exception as e:
-        print(f"LINE Error: {e}")
+        st.error(f"การแจ้งเตือนขัดข้อง: {e}")
 
 # --- 2. ฟังก์ชันลบข้อมูลอัตโนมัติ (จบงานเกิน 24 ชม.) ---
 def auto_delete_old_bookings():
