@@ -10,11 +10,10 @@ SUPABASE_URL = "https://qejqynbxdflwebzzwfzu.supabase.co"
 SUPABASE_KEY = "sb_publishable_hvNQEPvuEAlXfVeCzpy7Ug_kzvihQqq"
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-# ฟังก์ชันแจ้งเตือน LINE (ปรับให้รองรับสถานะ)
+# --- แก้ไขในฟังก์ชัน send_line_notification ---
 def send_line_notification(booking_id, resource, name, dept, t_start, t_end, purpose, destination, status_text="ส่งคำขอใหม่"):
     render_url = "https://line-booking-system.onrender.com/notify"
     
-    # ตรวจสอบประเภทข้อมูลเวลาก่อนแปลงเป็น String
     start_str = t_start.strftime("%d/%m/%Y %H:%M") if isinstance(t_start, datetime) else str(t_start)
     end_str = t_end.strftime("%H:%M") if isinstance(t_end, datetime) else str(t_end)
 
@@ -25,7 +24,8 @@ def send_line_notification(booking_id, resource, name, dept, t_start, t_end, pur
         "dept": dept,
         "date": start_str,
         "end_date": end_str,
-        "purpose": f"[{status_text}] {purpose}" 
+        "purpose": f"[{status_text}] {purpose}",
+        "destination": destination  # << เพิ่มบรรทัดนี้เข้าไปครับ
     }
     
     try:
