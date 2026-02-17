@@ -239,7 +239,7 @@ elif choice == "📅 ตารางงาน (Real-time)":
                     n_start = col_e2.text_input("เริ่ม (ISO Format)", str(row['start_time']))
                     n_end = col_e2.text_input("สิ้นสุด (ISO Format)", str(row['end_time']))
                     
-                    pw = st.text_input("ใส่รหัสผ่านเพื่อบันทึก (1234)", type="password")
+                    pw = st.text_input("ใส่รหัสผ่านเพื่อบันทึก)", type="password")
                     b_save, b_del, b_cls = st.columns(3)
                     
                     if b_save.form_submit_button("💾 บันทึก"):
