@@ -124,7 +124,6 @@ if choice == "📝 จองใหม่":
             if is_overlap:
                 st.error(f"❌ ไม่ว่าง: {res} ถูกจองไปแล้วในช่วงเวลานี้")
             else:
-                # แก้ไข Syntax Error: ปิดปีกกาให้ครบถ้วนสมบูรณ์
                 data = {
                     "resource": res, 
                     "requester": name, 
@@ -164,7 +163,6 @@ elif choice == "🔑 Admin (อนุมัติ)":
                 with st.container(border=True):
                     col1, col2, col3 = st.columns([3, 2, 2])
                     with col1:
-                        # Admin สามารถแก้ไขข้อมูลได้ทันทีก่อนอนุมัติ
                         edit_res = st.text_input("รายการ", str(item['resource']), key=f"res_{item['id']}")
                         edit_req = st.text_input("ผู้ขอ", str(item['requester']), key=f"req_{item['id']}")
                         edit_dept = st.text_input("แผนก", str(item['dept']), key=f"dept_{item['id']}")
@@ -175,18 +173,15 @@ elif choice == "🔑 Admin (อนุมัติ)":
                     with col3:
                         st.write("")
                         btn_app, btn_rej, btn_can = st.columns(3)
-                        # ปุ่มอนุมัติ
                         if btn_app.button("✅", key=f"app_{item['id']}", help="อนุมัติ", use_container_width=True):
                             up_data = {"resource": edit_res, "requester": edit_req, "dept": edit_dept, "start_time": edit_start, "end_time": edit_end, "purpose": edit_purp, "status": "Approved"}
                             supabase.table("bookings").update(up_data).eq("id", item['id']).execute()
                             send_line_notification(item['id'], edit_res, edit_req, edit_dept, edit_start, edit_end, edit_purp, "-", "Approved")
                             st.rerun()
-                        # ปุ่มปฏิเสธ
                         if btn_rej.button("❌", key=f"rej_{item['id']}", help="ปฏิเสธ", use_container_width=True):
                             supabase.table("bookings").update({"status": "Rejected"}).eq("id", item['id']).execute()
                             send_line_notification(item['id'], edit_res, edit_req, edit_dept, edit_start, edit_end, edit_purp, "-", "Rejected")
                             st.rerun()
-                        # ปุ่มลบรายการ
                         if btn_can.button("🗑️", key=f"can_{item['id']}", help="ลบรายการ", use_container_width=True):
                             supabase.table("bookings").delete().eq("id", item['id']).execute()
                             st.rerun()
@@ -198,14 +193,12 @@ elif choice == "📅 ตารางงาน (Real-time)":
     st.subheader("📅 ตารางงานปัจจุบันและล่วงหน้า")
     view_cat = st.radio("เลือกประเภทที่จะแสดง", ["ทั้งหมด", "รถยนต์", "ห้องประชุม"], horizontal=True)
     now_iso = datetime.now().isoformat()
-    # ดึงข้อมูลที่อนุมัติแล้วและยังไม่จบงาน
     res_db = supabase.table("bookings").select("*").eq("status", "Approved").gt("end_time", now_iso).order("start_time").execute()
     df = pd.DataFrame(res_db.data)
     
     if df.empty:
         st.info("ขณะนี้ไม่มีรายการจอง")
     else:
-        # กรองข้อมูลตามประเภท
         if view_cat == "รถยนต์":
             df = df[df['resource'].isin(["Civic (ตุ้ม)", "Civic (บอล)", "Camry (เนก)", "MG ขับเอง"])]
         elif view_cat == "ห้องประชุม":
@@ -215,21 +208,40 @@ elif choice == "📅 ตารางงาน (Real-time)":
             df_show = df.copy().reset_index(drop=True)
             df_show.index += 1
             df_show.insert(0, 'ลำดับ/No.', df_show.index)
-            # จัดรูปแบบเวลาสำหรับการแสดงในตาราง
             df_show['start_fmt'] = pd.to_datetime(df_show['start_time']).dt.strftime('%d/%m/%Y %H:%M')
             df_show['end_fmt'] = pd.to_datetime(df_show['end_time']).dt.strftime('%d/%m/%Y %H:%M')
             
-            # รักษาหัวข้อตารางภาษาไทย/อังกฤษ ตามรูปแบบเดิม
-            df_disp = df_show[['ลำดับ/No.', 'resource', 'start_fmt', 'end_fmt', 'requester', 'purpose', 'destination']]
-            df_disp.columns = ['ลำดับ / No.', 'รายการ / Resource', 'เวลาเริ่ม / Start Time', 'เวลาสิ้นสุด / End Time', 'ผู้จอง / Name', 'วัตถุประสงค์ / Purpose', 'ปลายทาง / Destination']
-            st.dataframe(df_disp, use_container_width=True)
+            # --- ส่วนที่เพิ่มใหม่: สร้าง Link สำหรับ Google Map ---
+            def make_map_link(dest):
+                if dest == "Office" or not dest:
+                    return "https://www.google.com/maps"
+                return f"https://www.google.com/maps/search/{dest}"
+            
+            df_show['Map_Link'] = df_show['destination'].apply(make_map_link)
+            # ----------------------------------------------
 
-            # --- ส่วนแก้ไขข้อมูลโดย Admin ---
+            df_disp = df_show[['ลำดับ/No.', 'resource', 'start_fmt', 'end_fmt', 'requester', 'purpose', 'destination', 'Map_Link']]
+            df_disp.columns = ['ลำดับ / No.', 'รายการ / Resource', 'เวลาเริ่ม / Start Time', 'เวลาสิ้นสุด / End Time', 'ผู้จอง / Name', 'วัตถุประสงค์ / Purpose', 'ปลายทาง / Destination', 'แผนที่ / Map']
+            
+            # ใช้ st.dataframe พร้อมกำหนด column_config เพื่อให้คลิก Link ได้
+            st.dataframe(
+                df_disp, 
+                use_container_width=True,
+                column_config={
+                    "แผนที่ / Map": st.column_config.LinkColumn(
+                        "แผนที่ / Map",
+                        help="คลิกเพื่อเปิด Google Maps",
+                        validate="^https://.*",
+                        display_text="📍 เปิดแผนที่"
+                    )
+                },
+                hide_index=True
+            )
+
             st.markdown("---")
             st.subheader("🛠️ แก้ไขข้อมูล (Admin Only)")
             with st.expander("คลิกเพื่อแก้ไขรายการ"):
                 edit_id = st.selectbox("เลือก ID ที่ต้องการแก้ไข", df['id'].tolist(), key="sel_id_table")
-                # ดึงข้อมูลแถวที่เลือก
                 row = df[df['id'] == edit_id].iloc[0]
                 
                 with st.form("edit_form_table"):
