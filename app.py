@@ -17,7 +17,7 @@ def send_line_notification(booking_id, resource, name, dept, t_start, t_end, pur
     start_str = t_start.strftime("%d/%m/%Y %H:%M") if isinstance(t_start, datetime) else str(t_start)
     end_str = t_end.strftime("%H:%M") if isinstance(t_end, datetime) else str(t_end)
 
-    # ปรับส่วน payload ในฟังก์ชัน send_line_notification
+# ปรับส่วน payload ในฟังก์ชัน send_line_notification
     payload = {
         "id": booking_id,
         "resource": resource,
@@ -26,7 +26,7 @@ def send_line_notification(booking_id, resource, name, dept, t_start, t_end, pur
         "date": start_str,
         "end_date": end_str,
         "purpose": purpose,
-        "destination": destination # << เพิ่มบรรทัดนี้ครับ
+        "destination": destination # << ต้องเพิ่มบรรทัดนี้ครับ
     }
     
     try:
