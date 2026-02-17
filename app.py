@@ -11,12 +11,13 @@ SUPABASE_KEY = "sb_publishable_hvNQEPvuEAlXfVeCzpy7Ug_kzvihQqq"
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 def send_line_notification(booking_id, resource, name, dept, t_start, t_end, purpose, destination, status_text="Pending"):
-    render_url = "https://line-booking-system.onrender.com/notify" # ตรวจสอบ URL นี้ให้ตรงกับ Render ของคุณ
+    render_url = "https://line-booking-system.onrender.com/notify"
     
+    # แปลงเวลาเป็น String
     start_str = t_start.strftime("%d/%m/%Y %H:%M") if isinstance(t_start, datetime) else str(t_start)
     end_str = t_end.strftime("%H:%M") if isinstance(t_end, datetime) else str(t_end)
 
-    # แก้ไขเฉพาะใน payload ของฟังก์ชัน send_line_notification
+    # Payload ที่สมบูรณ์ (ต้องมี destination ข้อมูลถึงจะไปโชว์ใน LINE)
     payload = {
         "id": booking_id,
         "resource": resource,
@@ -24,15 +25,19 @@ def send_line_notification(booking_id, resource, name, dept, t_start, t_end, pur
         "dept": dept,
         "date": start_str,
         "end_date": end_str,
-        "purpose": purpose,
-        "destination": destination # << ต้องเพิ่มบรรทัดนี้ ข้อมูลถึงจะไปครบครับ
+        "purpose": f"[{status_text}] {purpose}",
+        "destination": destination  # << เพิ่มจุดนี้ครับ
     }
     
     try:
-        # ปรับ timeout ให้มากขึ้นเผื่อ Server หลับครับ
-        requests.post(render_url, json=payload, timeout=15) 
+        # เพิ่ม timeout เป็น 15 วินาที เผื่อ Server Render กำลัง "ตื่น" (Wake up)
+        resp = requests.post(render_url, json=payload, timeout=15)
+        if resp.status_code == 200:
+            st.toast("🔔 ส่งแจ้งเตือนเข้า LINE แล้ว", icon="✅")
+        else:
+            st.error(f"❌ Bot ตอบกลับด้วยข้อผิดพลาด: {resp.status_code}")
     except Exception as e:
-        st.error(f"การแจ้งเตือนขัดข้อง: {e}")
+        st.error(f"⚠️ ไม่สามารถเชื่อมต่อกับ Bot ได้ (Render อาจจะหลับ): {e}")
 
 # --- 2. ฟังก์ชันลบข้อมูลอัตโนมัติ (จบงานเกิน 24 ชม.) ---
 def auto_delete_old_bookings():
