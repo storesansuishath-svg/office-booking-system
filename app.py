@@ -92,33 +92,9 @@ if choice == "📝 จองใหม่":
         phone = st.text_input("เบอร์โทรศัพท์")
         dept = st.text_input("แผนก")
     with col2:
-        # 1. วันที่ใช้ปฏิทิน
-        d_start = st.date_input("เลือกวันที่เริ่ม", datetime.now().date())
-        # 2. เวลาเริ่ม (ขึ้น : รอไว้ให้เลย)
-        t_start_key = st.text_input("ระบุเวลาเริ่ม (24 ชม.)", value="08:00", help="ตัวอย่าง 08:30")
-        
-        st.markdown("---")
-        
-        # 3. วันที่สิ้นสุด (ปฏิทิน และห้ามเลือกก่อนวันเริ่ม)
-        d_end = st.date_input("เลือกวันที่สิ้นสุด", value=d_start, min_value=d_start)
-        # 4. เวลาสิ้นสุด (ขึ้น : รอไว้ให้เลย)
-        t_end_key = st.text_input("ระบุเวลาสิ้นสุด (24 ชม.)", value="17:00", help="ตัวอย่าง 17:30")
-        
+        t_start = st.datetime_input("เวลาเริ่ม", datetime.now())
+        t_end = st.datetime_input("เวลาสิ้นสุด", datetime.now() + timedelta(hours=1))
         reason = st.text_area("วัตถุประสงค์การใช้งาน")
-
-        # --- ส่วนแปลงค่า (Logic เติม : อัตโนมัติ) ---
-        try:
-            # ลบทุกอย่างที่ไม่ใช่ตัวเลขออกก่อน แล้วเช็คว่าถ้ามี 4 ตัวให้แทรก : ตรงกลาง
-            s_raw = t_start_key.replace(":", "").strip()
-            if len(s_raw) == 4: t_start_key = f"{s_raw[:2]}:{s_raw[2:]}"
-            
-            e_raw = t_end_key.replace(":", "").strip()
-            if len(e_raw) == 4: t_end_key = f"{e_raw[:2]}:{e_raw[2:]}"
-                
-            t_start = datetime.combine(d_start, datetime.strptime(t_start_key, "%H:%M").time())
-            t_end = datetime.combine(d_end, datetime.strptime(t_end_key, "%H:%M").time())
-        except:
-            t_start, t_end = None, None
 
     if st.button("ยืนยันการส่งคำขอจอง"):
         if not name or not phone or not reason or not dept:
@@ -176,31 +152,11 @@ elif choice == "🔑 Admin (อนุมัติ)":
                         edit_req = st.text_input("ผู้ขอ", str(item['requester']), key=f"req_{item['id']}")
                         edit_dept = st.text_input("แผนก", str(item['dept']), key=f"dept_{item['id']}")
                     with col2:
-                        curr_s = datetime.fromisoformat(item['start_time'])
-                        curr_e = datetime.fromisoformat(item['end_time'])
-
-                        # แยกวันที่ (ปฏิทิน) และ เวลา (คีย์เอง)
-                        a_d_s = st.date_input("วันที่เริ่ม", curr_s.date(), key=f"ds_{item['id']}")
-                        a_t_s = st.text_input("เวลาเริ่ม", curr_s.strftime("%H:%M"), key=f"ts_{item['id']}")
-                        
-                        st.markdown("---")
-                        
-                        a_d_e = st.date_input("วันที่สิ้นสุด", curr_e.date(), key=f"de_{item['id']}")
-                        a_t_e = st.text_input("เวลาสิ้นสุด", curr_e.strftime("%H:%M"), key=f"te_{item['id']}")
-                        
+                        # --- เพิ่มช่องแก้ไขปลายทางในหน้า Admin ---
+                        edit_dest = st.text_input("ปลายทาง", str(item.get('destination', '-')), key=f"dest_{item['id']}")
+                        edit_start = st.text_input("เริ่ม", str(item['start_time']), key=f"start_{item['id']}")
+                        edit_end = st.text_input("สิ้นสุด", str(item['end_time']), key=f"end_{item['id']}")
                         edit_purp = st.text_area("เหตุผล", str(item['purpose']), key=f"purp_{item['id']}")
-
-                        # --- รวมร่างกลับเป็นรูปแบบเดิม (พร้อม Auto-format :) ---
-                        try:
-                            s_fix = a_t_s.replace(":", "").strip()
-                            if len(s_fix) == 4: a_t_s = f"{s_fix[:2]}:{s_fix[2:]}"
-                            e_fix = a_t_e.replace(":", "").strip()
-                            if len(e_fix) == 4: a_t_e = f"{e_fix[:2]}:{e_fix[2:]}"
-                            
-                            edit_start = datetime.combine(a_d_s, datetime.strptime(a_t_s, "%H:%M").time()).isoformat()
-                            edit_end = datetime.combine(a_d_e, datetime.strptime(a_t_e, "%H:%M").time()).isoformat()
-                        except:
-                            edit_start, edit_end = item['start_time'], item['end_time']
                     with col3:
                         st.write("")
                         btn_app, btn_rej, btn_can = st.columns(3)
@@ -256,29 +212,8 @@ elif choice == "📅 ตารางงาน (Real-time)":
                     col_e1, col_e2 = st.columns(2)
                     n_res = col_e1.text_input("รายการ / Resource", str(row['resource']))
                     n_req = col_e1.text_input("ผู้จอง / Name", str(row['requester']))
+                    # --- เพิ่มการแก้ไขแผนก ---
                     n_dept = col_e1.text_input("แผนก / Dept", str(row.get('dept', '-')))
-
-                    # แยกวันที่และเวลาในหน้าแก้ไข
-                    row_s = datetime.fromisoformat(row['start_time'])
-                    row_e = datetime.fromisoformat(row['end_time'])
-                    
-                    e_d_s = col_e2.date_input("วันที่เริ่ม", row_s.date())
-                    e_t_s = col_e2.text_input("เวลาเริ่ม", row_s.strftime("%H:%M"))
-                    
-                    e_d_e = col_e2.date_input("วันที่สิ้นสุด", row_e.date())
-                    e_t_e = col_e2.text_input("เวลาสิ้นสุด", row_e.strftime("%H:%M"))
-                    
-                    # Logic แปลงค่ากลับ (Auto-format :)
-                    try:
-                        s_v = e_t_s.replace(":", "").strip()
-                        if len(s_v) == 4: e_t_s = f"{s_v[:2]}:{s_v[2:]}"
-                        e_v = e_t_e.replace(":", "").strip()
-                        if len(e_v) == 4: e_t_e = f"{e_v[:2]}:{e_v[2:]}"
-                        
-                        n_start = datetime.combine(e_d_s, datetime.strptime(e_t_s, "%H:%M").time()).isoformat()
-                        n_end = datetime.combine(e_d_e, datetime.strptime(e_t_e, "%H:%M").time()).isoformat()
-                    except:
-                        n_start, n_end = row['start_time'], row['end_time']
 
                     n_start = col_e2.text_input("เริ่ม (ISO Format)", str(row['start_time']))
                     n_end = col_e2.text_input("สิ้นสุด (ISO Format)", str(row['end_time']))
