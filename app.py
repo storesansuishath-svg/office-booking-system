@@ -256,8 +256,29 @@ elif choice == "📅 ตารางงาน (Real-time)":
                     col_e1, col_e2 = st.columns(2)
                     n_res = col_e1.text_input("รายการ / Resource", str(row['resource']))
                     n_req = col_e1.text_input("ผู้จอง / Name", str(row['requester']))
-                    # --- เพิ่มการแก้ไขแผนก ---
                     n_dept = col_e1.text_input("แผนก / Dept", str(row.get('dept', '-')))
+
+                    # แยกวันที่และเวลาในหน้าแก้ไข
+                    row_s = datetime.fromisoformat(row['start_time'])
+                    row_e = datetime.fromisoformat(row['end_time'])
+                    
+                    e_d_s = col_e2.date_input("วันที่เริ่ม", row_s.date())
+                    e_t_s = col_e2.text_input("เวลาเริ่ม", row_s.strftime("%H:%M"))
+                    
+                    e_d_e = col_e2.date_input("วันที่สิ้นสุด", row_e.date())
+                    e_t_e = col_e2.text_input("เวลาสิ้นสุด", row_e.strftime("%H:%M"))
+                    
+                    # Logic แปลงค่ากลับ (Auto-format :)
+                    try:
+                        s_v = e_t_s.replace(":", "").strip()
+                        if len(s_v) == 4: e_t_s = f"{s_v[:2]}:{s_v[2:]}"
+                        e_v = e_t_e.replace(":", "").strip()
+                        if len(e_v) == 4: e_t_e = f"{e_v[:2]}:{e_v[2:]}"
+                        
+                        n_start = datetime.combine(e_d_s, datetime.strptime(e_t_s, "%H:%M").time()).isoformat()
+                        n_end = datetime.combine(e_d_e, datetime.strptime(e_t_e, "%H:%M").time()).isoformat()
+                    except:
+                        n_start, n_end = row['start_time'], row['end_time']
 
                     n_start = col_e2.text_input("เริ่ม (ISO Format)", str(row['start_time']))
                     n_end = col_e2.text_input("สิ้นสุด (ISO Format)", str(row['end_time']))
