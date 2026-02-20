@@ -92,32 +92,27 @@ if choice == "📝 จองใหม่":
         phone = st.text_input("เบอร์โทรศัพท์")
         dept = st.text_input("แผนก")
     with col2:
-                        # ดึงค่าเดิมมาแยกเป็น วัน และ เวลา
-                        curr_start = datetime.fromisoformat(item['start_time'])
-                        curr_end = datetime.fromisoformat(item['end_time'])
+        # 1. วันที่ใช้ปฏิทิน (Date Picker)
+        d_start = st.date_input("วันที่เริ่ม", datetime.now().date())
+        # 2. เวลาให้คีย์เองรูปแบบ 24 ชม. (Text Input)
+        t_start_key = st.text_input("เวลาเริ่ม (เช่น 08:30)", value=datetime.now().strftime("%H:%M"))
+        
+        st.markdown("---")
+        
+        # 3. วันที่สิ้นสุด (ปฏิทิน และห้ามเลือกก่อนวันเริ่ม)
+        d_end = st.date_input("วันที่สิ้นสุด", value=d_start, min_value=d_start)
+        # 4. เวลาสิ้นสุดคีย์เอง
+        t_end_key = st.text_input("เวลาสิ้นสุด (เช่น 17:00)", value=(datetime.now() + timedelta(hours=1)).strftime("%H:%M"))
+        
+        # 5. วัตถุประสงค์ (คงเดิม)
+        reason = st.text_area("วัตถุประสงค์การใช้งาน")
 
-                        # 1. แยกวันที่ (ปฏิทิน)
-                        a_d_start = st.date_input("วันที่เริ่ม", curr_start.date(), key=f"d_s_{item['id']}")
-                        # 2. แยกเวลา (คีย์เอง)
-                        a_t_start = st.text_input("เวลาเริ่ม (24ชม.)", curr_start.strftime("%H:%M"), key=f"t_s_{item['id']}")
-                        
-                        st.markdown("---")
-                        
-                        a_d_end = st.date_input("วันที่สิ้นสุด", curr_end.date(), key=f"d_e_{item['id']}")
-                        a_t_end = st.text_input("เวลาสิ้นสุด (24ชม.)", curr_end.strftime("%H:%M"), key=f"t_e_{item['id']}")
-                        
-                        edit_purp = st.text_area("เหตุผล", str(item['purpose']), key=f"purp_{item['id']}")
-
-                        # --- รวมร่างกลับเป็นรูปแบบเดิม เพื่อให้ปุ่ม ✅ ทำงานได้ต่อ ---
-                        try:
-                            # ใส่ระบบช่วยเติม : ให้ Admin ด้วยครับ
-                            if len(a_t_start) == 4 and ":" not in a_t_start: a_t_start = f"{a_t_start[:2]}:{a_t_start[2:]}"
-                            if len(a_t_end) == 4 and ":" not in a_t_end: a_t_end = f"{a_t_end[:2]}:{a_t_end[2:]}"
-                            
-                            edit_start = datetime.combine(a_d_start, datetime.strptime(a_t_start, "%H:%M").time()).isoformat()
-                            edit_end = datetime.combine(a_d_end, datetime.strptime(a_t_end, "%H:%M").time()).isoformat()
-                        except:
-                            edit_start, edit_end = item['start_time'], item['end_time']
+        # --- ส่วนแปลงค่าวันและเวลาเพื่อส่งไปเช็คเงื่อนไข (Logic) ---
+        try:
+            t_start = datetime.combine(d_start, datetime.strptime(t_start_key, "%H:%M").time())
+            t_end = datetime.combine(d_end, datetime.strptime(t_end_key, "%H:%M").time())
+        except ValueError:
+            t_start, t_end = None, None
 
     if st.button("ยืนยันการส่งคำขอจอง"):
         if not name or not phone or not reason or not dept:
