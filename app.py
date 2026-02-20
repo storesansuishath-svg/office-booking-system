@@ -61,7 +61,7 @@ if choice == "📝 จองใหม่":
     col1, col2 = st.columns(2)
     with col1:
         cat = st.radio("ประเภททรัพยากร", ["รถยนต์", "ห้องประชุม"])
-        res = st.selectbox("เลือกรายการ", ["Civic (ตุ้ม)", "Civic (บอล)", "Camry (เนก)", "MG"] if cat == "รถยนต์" else ["ห้องชั้น 1 (ห้องใหญ่)", "ห้องชั้น 2", "ห้อง VIP", "ห้องชั้นลอย", "ห้อง Production"])
+        res = st.selectbox("เลือกรายการ", ["Civic (ตุ้ม)", "Civic (บอล)", "Camry (เนก)", "MG ขับเอง"] if cat == "รถยนต์" else ["ห้องชั้น 1 (ห้องใหญ่)", "ห้องชั้น 2", "ห้อง VIP", "ห้องชั้นลอย", "ห้อง Production"])
         dest = st.text_input("สถานที่ปลายทาง") if cat == "รถยนต์" else "Office"
         if cat == "รถยนต์":
             if dest:
@@ -84,7 +84,7 @@ if choice == "📝 จองใหม่":
             t_end = datetime.combine(d_end, datetime.strptime(te_f, "%H:%M").time())
         except: t_start, t_end = None, None
 
-    # แก้ไขจุดที่ 1: การเยื้อง (Indentation) ของปุ่มบันทึก
+    # ปุ่มยืนยัน (Indentation เป๊ะตามพี่สั่งครับ)
     if st.button("ยืนยันการส่งคำขอจอง"):
         if not name or not dept or t_start is None: st.warning("⚠️ ข้อมูลไม่ครบ")
         elif t_start >= t_end: st.error("❌ เวลาเริ่มต้องก่อนเวลาสิ้นสุด")
@@ -99,11 +99,8 @@ if choice == "📝 จองใหม่":
 elif choice == "📅 ตารางงาน (Real-time)":
     st.subheader("📅 ตารางงานปัจจุบันและล่วงหน้า")
     view_cat = st.radio("เลือกประเภทที่จะแสดง", ["ทั้งหมด", "รถยนต์", "ห้องประชุม"], horizontal=True)
-    
-    # 💡 แก้เฉพาะบรรทัดนี้: ให้ดึงข้อมูลย้อนหลังไป 24 ชม. จากเวลาปัจจุบัน
     threshold_24h = (datetime.now() - timedelta(hours=24)).isoformat()
     res_db = supabase.table("bookings").select("*").eq("status", "Approved").gt("end_time", threshold_24h).order("start_time").execute()
-    
     df = pd.DataFrame(res_db.data)
     
     if df.empty:
@@ -115,20 +112,48 @@ elif choice == "📅 ตารางงาน (Real-time)":
             df = df[df['resource'].isin(["ห้องชั้น 1 (ห้องใหญ่)", "ห้องชั้น 2", "ห้อง VIP", "ห้องชั้นลอย", "ห้อง Production"])]
 
         if not df.empty:
-            # --- รูปแบบตารางเดิมของพี่สุดหล่อ (ห้ามเปลี่ยน) ---
             df_show = df.copy().reset_index(drop=True)
             df_show.index += 1
             df_show.insert(0, 'ลำดับ/No.', df_show.index)
-            
-            # ใส่ errors='coerce' เพื่อกันหน้าจอสีแดงเผื่อเจอข้อมูลเก่าครับ
             df_show['start_fmt'] = pd.to_datetime(df_show['start_time'], errors='coerce').dt.strftime('%d/%m/%Y %H:%M')
             df_show['end_fmt'] = pd.to_datetime(df_show['end_time'], errors='coerce').dt.strftime('%d/%m/%Y %H:%M')
-            
             df_disp = df_show[['ลำดับ/No.', 'resource', 'start_fmt', 'end_fmt', 'requester', 'purpose', 'destination']]
-            
-            # หัวข้อภาษาไทย/อังกฤษ ตามที่พี่ตั้งไว้เป๊ะๆ ครับ
             df_disp.columns = ['ลำดับ / No.', 'รายการ / Resource', 'เวลาเริ่ม / Start Time', 'เวลาสิ้นสุด / End Time', 'ผู้จอง / Name', 'วัตถุประสงค์ / Purpose', 'ปลายทาง / Destination']
             st.dataframe(df_disp, use_container_width=True)
+
+            # --- 💡 เติมส่วนแก้ไขข้อมูลที่หายไปกลับมาให้แล้วครับพี่สุดหล่อ ---
+            st.markdown("---")
+            st.subheader("🛠️ แก้ไขข้อมูล (Admin Only)")
+            with st.expander("คลิกเพื่อแก้ไขรายการ"):
+                edit_id = st.selectbox("เลือก ID ที่ต้องการแก้ไข", df['id'].tolist(), key="sel_id_table")
+                row = df[df['id'] == edit_id].iloc[0]
+                with st.form("edit_form_table"):
+                    col_e1, col_e2 = st.columns(2)
+                    n_res = col_e1.text_input("รายการ / Resource", str(row['resource']))
+                    n_req = col_e1.text_input("ผู้จอง / Name", str(row['requester']))
+                    n_dept = col_e1.text_input("แผนก / Dept", str(row.get('dept', '-')))
+
+                    # แยกปฏิทินและเวลา 4 หลักในหน้าแก้ไข
+                    dt_s = pd.to_datetime(row['start_time'], errors='coerce')
+                    dt_e = pd.to_datetime(row['end_time'], errors='coerce')
+                    n_d_s = col_e2.date_input("วันที่เริ่ม", dt_s.date() if pd.notnull(dt_s) else datetime.now().date())
+                    n_t_s = col_e2.text_input("เวลาเริ่ม (4 หลัก)", value=dt_s.strftime("%H%M") if pd.notnull(dt_s) else "0800", max_chars=4)
+                    n_d_e = col_e2.date_input("วันที่สิ้นสุด", dt_e.date() if pd.notnull(dt_e) else datetime.now().date())
+                    n_t_e = col_e2.text_input("เวลาสิ้นสุด (4 หลัก)", value=dt_e.strftime("%H%M") if pd.notnull(dt_e) else "1700", max_chars=4)
+                    
+                    pw = st.text_input("รหัสผ่าน Admin", type="password")
+                    if st.form_submit_button("💾 บันทึกการแก้ไข"):
+                        if pw == "1234":
+                            try:
+                                fs = format_time_string(n_t_s); fe = format_time_string(n_t_e)
+                                final_s = datetime.combine(n_d_s, datetime.strptime(fs, "%H:%M").time()).isoformat()
+                                final_e = datetime.combine(n_d_e, datetime.strptime(fe, "%H:%M").time()).isoformat()
+                                supabase.table("bookings").update({"resource": n_res, "requester": n_req, "dept": n_dept, "start_time": final_s, "end_time": final_e}).eq("id", edit_id).execute()
+                                st.success("อัปเดตข้อมูลเรียบร้อย!")
+                                st.rerun()
+                            except: st.error("รูปแบบเวลาผิด")
+                        else: st.error("รหัสผ่านไม่ถูกต้อง")
+
 # --- หน้า Admin (อนุมัติ) ---
 elif choice == "🔑 Admin (อนุมัติ)":
     st.subheader("🔑 ระบบอนุมัติการจอง")
@@ -158,7 +183,7 @@ elif choice == "📊 รายงานประจำเดือน":
     st.subheader("📊 รายงาน (เก็บย้อนหลัง 45 วัน)")
     admin_pw = st.text_input("รหัสผ่านดูรายงาน", type="password")
     if admin_pw == "s1234":
-        cars = ["Civic (ตุ้ม)", "Civic (บอล)", "Camry (เนก)", "MG"]
+        cars = ["Civic (ตุ้ม)", "Civic (บอล)", "Camry (เนก)", "MG ขับเอง"]
         res_rep = supabase.table("bookings").select("*").in_("resource", cars).eq("status", "Approved").execute()
         if res_rep.data:
             df_rep = pd.DataFrame(res_rep.data)
@@ -168,12 +193,10 @@ elif choice == "📊 รายงานประจำเดือน":
             final_df = df_rep[df_rep['Month-Year'] == sel_m].copy()
             st.dataframe(final_df[['resource', 'requester', 'dept', 'start_time', 'destination', 'purpose']], use_container_width=True)
             
-            # 💡 แก้ไขจุดที่ 3: ป้องกัน ModuleNotFoundError
             buffer = io.BytesIO()
             try:
                 with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
                     final_df.to_excel(writer, index=False)
                 st.download_button("📥 Download Excel", buffer.getvalue(), f"Car_Report_{sel_m}.xlsx")
             except:
-                # ถ้ายังไม่ได้ลง xlsxwriter ให้ใช้ CSV แทนชั่วคราวเพื่อไม่ให้เว็บค้าง
                 st.download_button("📥 Download CSV (สำรอง)", final_df.to_csv(index=False).encode('utf-8-sig'), "report.csv")
