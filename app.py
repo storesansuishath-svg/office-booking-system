@@ -101,4 +101,117 @@ if choice == "📝 จองใหม่":
                 df_check['start_time'] = pd.to_datetime(df_check['start_time']).dt.tz_localize(None)
                 df_check['end_time'] = pd.to_datetime(df_check['end_time']).dt.tz_localize(None)
                 overlap = df_check[~((df_check['start_time'] >= t_end) | (df_check['end_time'] <= t_start))]
-                if not
+                if not overlap.empty: is_overlap = True
+
+            if is_overlap:
+                st.error(f"❌ ไม่ว่าง: {res} ถูกจองไปแล้วในช่วงเวลานี้")
+            else:
+                data = {"resource": res, "requester": name, "phone": phone, "dept": dept, "start_time": t_start.isoformat(), "end_time": t_end.isoformat(), "purpose": reason, "destination": dest, "status": "Pending"}
+                resp = supabase.table("bookings").insert(data).execute()
+                if resp.data:
+                    send_line_notification(resp.data[0]['id'], res, name, dept, t_start, t_end, reason, dest, "Pending")
+                    st.success("✅ ส่งคำขอเรียบร้อย!")
+
+# --- หน้าตารางงาน (Real-time) ---
+elif choice == "📅 ตารางงาน (Real-time)":
+    st.subheader("📅 ตารางงานปัจจุบันและล่วงหน้า")
+    view_cat = st.radio("เลือกประเภท", ["ทั้งหมด", "รถยนต์", "ห้องประชุม"], horizontal=True)
+    now_iso = datetime.now().isoformat()
+    res_db = supabase.table("bookings").select("*").eq("status", "Approved").gt("end_time", now_iso).order("start_time").execute()
+    df = pd.DataFrame(res_db.data)
+    
+    if df.empty: st.info("ไม่มีรายการจองขณะนี้")
+    else:
+        if view_cat == "รถยนต์": df = df[df['resource'].isin(["Civic (ตุ้ม)", "Civic (บอล)", "Camry (เนก)", "MG ขับเอง"])]
+        elif view_cat == "ห้องประชุม": df = df[df['resource'].isin(["ห้องชั้น 1 (ห้องใหญ่)", "ห้องชั้น 2", "ห้อง VIP", "ห้องชั้นลอย", "ห้อง Production"])]
+        
+        if not df.empty:
+            df_show = df.copy().reset_index(drop=True)
+            df_show.index += 1
+            df_show.insert(0, 'ลำดับ/No.', df_show.index)
+            df_show['start_fmt'] = pd.to_datetime(df_show['start_time'], errors='coerce').dt.strftime('%d/%m/%Y %H:%M')
+            df_show['end_fmt'] = pd.to_datetime(df_show['end_time'], errors='coerce').dt.strftime('%d/%m/%Y %H:%M')
+            df_disp = df_show[['ลำดับ/No.', 'resource', 'start_fmt', 'end_fmt', 'requester', 'purpose', 'destination']]
+            df_disp.columns = ['ลำดับ / No.', 'รายการ / Resource', 'เวลาเริ่ม / Start Time', 'เวลาสิ้นสุด / End Time', 'ผู้จอง / Name', 'วัตถุประสงค์ / Purpose', 'ปลายทาง / Destination']
+            st.dataframe(df_disp, use_container_width=True)
+
+            st.markdown("---")
+            st.subheader("🛠️ แก้ไข/ลบ ข้อมูล (Admin Only)")
+            with st.expander("คลิกเพื่อแก้ไขรายการ"):
+                edit_id = st.selectbox("เลือก ID", df['id'].tolist(), key="sel_id_table")
+                row = df[df['id'] == edit_id].iloc[0]
+                with st.form("edit_form_table"):
+                    col_e1, col_e2 = st.columns(2)
+                    n_res = col_e1.text_input("รายการ", str(row['resource']))
+                    n_req = col_e1.text_input("ผู้จอง", str(row['requester']))
+                    dt_s = pd.to_datetime(row['start_time'], errors='coerce')
+                    dt_e = pd.to_datetime(row['end_time'], errors='coerce')
+                    n_d_s = col_e2.date_input("วันที่เริ่ม", dt_s.date() if pd.notnull(dt_s) else datetime.now().date())
+                    n_t_s = col_e2.text_input("เวลาเริ่ม (4 หลัก)", value=dt_s.strftime("%H%M") if pd.notnull(dt_s) else "0800", max_chars=4)
+                    n_d_e = col_e2.date_input("วันที่สิ้นสุด", dt_e.date() if pd.notnull(dt_e) else datetime.now().date())
+                    n_t_e = col_e2.text_input("เวลาสิ้นสุด (4 หลัก)", value=dt_e.strftime("%H%M") if pd.notnull(dt_e) else "1700", max_chars=4)
+                    pw = st.text_input("รหัสผ่านสำหรับการดำเนินการ", type="password")
+                    b_save, b_del, b_cls = st.columns(3)
+                    if b_save.form_submit_button("💾 บันทึก"):
+                        if pw == "1234":
+                            try:
+                                fs = format_time_string(n_t_s); fe = format_time_string(n_t_e)
+                                final_s = datetime.combine(n_d_s, datetime.strptime(fs, "%H:%M").time()).isoformat()
+                                final_e = datetime.combine(n_d_e, datetime.strptime(fe, "%H:%M").time()).isoformat()
+                                supabase.table("bookings").update({"resource": n_res, "requester": n_req, "start_time": final_s, "end_time": final_e}).eq("id", edit_id).execute()
+                                st.success("อัปเดตแล้ว!"); st.rerun()
+                            except: st.error("รูปแบบเวลาผิด")
+                        else: st.error("รหัสผ่านไม่ถูกต้อง")
+                    if b_del.form_submit_button("🗑️ ลบรายการ"):
+                        if pw == "s1234":
+                            supabase.table("bookings").delete().eq("id", edit_id).execute()
+                            st.success("ลบแล้ว!"); st.rerun()
+                        else: st.error("รหัสผ่านไม่ถูกต้อง")
+                    if b_cls.form_submit_button("✖️ ปิด"): st.rerun()
+
+# --- หน้า Admin (อนุมัติ) ---
+elif choice == "🔑 Admin (อนุมัติ)":
+    st.subheader("🔑 ระบบอนุมัติ")
+    admin_pw = st.text_input("Password Admin", type="password")
+    if admin_pw == "s1234":
+        items = supabase.table("bookings").select("*").eq("status", "Pending").order("id").execute().data
+        if not items: st.info("ไม่มีรายการรอ")
+        else:
+            for item in items:
+                with st.container(border=True):
+                    col1, col2 = st.columns([4, 1])
+                    with col1:
+                        c_s = pd.to_datetime(item['start_time'], errors='coerce')
+                        a_d = st.date_input("วันที่", c_s.date() if pd.notnull(c_s) else datetime.now().date(), key=f"d_{item['id']}")
+                        a_t = st.text_input("เวลา (4 หลัก)", c_s.strftime("%H%M") if pd.notnull(c_s) else "0800", key=f"t_{item['id']}", max_chars=4)
+                        st.write(f"🚗 {item['resource']} | 👤 {item['requester']} | 📍 {item.get('destination','-')}")
+                    if col2.button("อนุมัติ ✅", key=f"app_{item['id']}"):
+                        try:
+                            f_t = format_time_string(a_t)
+                            final_t = datetime.combine(a_d, datetime.strptime(f_t, "%H:%M").time()).isoformat()
+                            supabase.table("bookings").update({"status": "Approved", "start_time": final_t}).eq("id", item['id']).execute()
+                            send_line_notification(item['id'], item['resource'], item['requester'], item['dept'], final_t, item['end_time'], item['purpose'], item.get('destination','-'), "Approved")
+                            st.rerun()
+                        except: st.error("เวลาผิด")
+
+# --- หน้ารายงานประจำเดือน ---
+elif choice == "📊 รายงานประจำเดือน":
+    st.subheader("📊 รายงาน (เก็บข้อมูล 45 วัน)")
+    admin_pw = st.text_input("รหัสผ่านรายงาน", type="password")
+    if admin_pw == "s1234":
+        cars = ["Civic (ตุ้ม)", "Civic (บอล)", "Camry (เนก)", "MG ขับเอง"]
+        res_rep = supabase.table("bookings").select("*").in_("resource", cars).eq("status", "Approved").execute()
+        if res_rep.data:
+            df_rep = pd.DataFrame(res_rep.data)
+            df_rep['start_time'] = pd.to_datetime(df_rep['start_time'], errors='coerce')
+            df_rep['Month-Year'] = df_rep['start_time'].dt.strftime('%m/%Y')
+            sel_m = st.selectbox("เลือกเดือน", df_rep['Month-Year'].unique())
+            final_df = df_rep[df_rep['Month-Year'] == sel_m].copy()
+            final_df = final_df[['resource', 'requester', 'dept', 'start_time', 'destination', 'purpose']]
+            final_df.columns = ['รถยนต์', 'ผู้จอง', 'แผนก', 'เวลาเริ่ม', 'สถานที่', 'วัตถุประสงค์']
+            st.dataframe(final_df, use_container_width=True)
+            buffer = io.BytesIO()
+            with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
+                final_df.to_excel(writer, index=False)
+            st.download_button("📥 Download Excel", buffer.getvalue(), f"Car_Report_{sel_m}.xlsx")
+    elif admin_pw != "": st.error("รหัสผ่านไม่ถูกต้อง")
