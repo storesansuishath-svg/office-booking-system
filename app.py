@@ -91,10 +91,27 @@ if choice == "📝 จองใหม่":
         name = st.text_input("ชื่อผู้จอง")
         phone = st.text_input("เบอร์โทรศัพท์")
         dept = st.text_input("แผนก")
-    with col2:
-        t_start = st.datetime_input("เวลาเริ่ม", datetime.now())
-        t_end = st.datetime_input("เวลาสิ้นสุด", datetime.now() + timedelta(hours=1))
+with col2:
+        # 1. เลือกวันที่ผ่านปฏิทิน
+        d_start = st.date_input("วันที่เริ่ม", datetime.now().date())
+        # 2. คีย์เวลาเริ่มเอง (24 ชม.)
+        t_start_str = st.text_input("เวลาเริ่ม (เช่น 08:30)", value=datetime.now().strftime("%H:%M"))
+        
+        st.markdown("---")
+        
+        # 3. เลือกวันสิ้นสุด (ห้ามเลือกก่อนวันเริ่ม)
+        d_end = st.date_input("วันที่สิ้นสุด", value=d_start, min_value=d_start)
+        # 4. คีย์เวลาสิ้นสุดเอง (24 ชม.)
+        t_end_str = st.text_input("เวลาสิ้นสุด (เช่น 17:00)", value=(datetime.now() + timedelta(hours=1)).strftime("%H:%M"))
+        
         reason = st.text_area("วัตถุประสงค์การใช้งาน")
+
+        # --- ส่วนแปลงค่าเพื่อส่งไปเช็คเงื่อนไข (Logic) ---
+        try:
+            t_start = datetime.combine(d_start, datetime.strptime(t_start_str, "%H:%M").time())
+            t_end = datetime.combine(d_end, datetime.strptime(t_end_str, "%H:%M").time())
+        except ValueError:
+            t_start, t_end = None, None # ถ้าคีย์เวลาผิด รูปแบบจะไม่ผ่านเงื่อนไขด้านล่าง
 
     if st.button("ยืนยันการส่งคำขอจอง"):
         if not name or not phone or not reason or not dept:
