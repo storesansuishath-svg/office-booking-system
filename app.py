@@ -177,11 +177,33 @@ elif choice == "🔑 Admin (อนุมัติ)":
                         edit_req = st.text_input("ผู้ขอ", str(item['requester']), key=f"req_{item['id']}")
                         edit_dept = st.text_input("แผนก", str(item['dept']), key=f"dept_{item['id']}")
                     with col2:
-                        # --- เพิ่มช่องแก้ไขปลายทางในหน้า Admin ---
-                        edit_dest = st.text_input("ปลายทาง", str(item.get('destination', '-')), key=f"dest_{item['id']}")
-                        edit_start = st.text_input("เริ่ม", str(item['start_time']), key=f"start_{item['id']}")
-                        edit_end = st.text_input("สิ้นสุด", str(item['end_time']), key=f"end_{item['id']}")
+                        # 1. ดึงค่าเดิมมาแยกเป็น วัน และ เวลา
+                        curr_start = datetime.fromisoformat(item['start_time'])
+                        curr_end = datetime.fromisoformat(item['end_time'])
+
+                        # 2. ส่วนของเวลาเริ่ม (ปฏิทิน + พิมพ์เลข 4 หลัก)
+                        a_d_start = st.date_input("วันที่เริ่ม", curr_start.date(), key=f"d_s_{item['id']}")
+                        a_t_start = st.text_input("เวลาเริ่ม (พิมพ์ 4 หลัก เช่น 0800)", value=curr_start.strftime("%H%M"), key=f"t_s_{item['id']}", max_chars=4)
+                        
+                        st.markdown("---")
+                        
+                        # 3. ส่วนของเวลาสิ้นสุด (ปฏิทิน + พิมพ์เลข 4 หลัก)
+                        a_d_end = st.date_input("วันที่สิ้นสุด", curr_end.date(), key=f"d_e_{item['id']}")
+                        a_t_end = st.text_input("เวลาสิ้นสุด (พิมพ์ 4 หลัก เช่น 1700)", value=curr_end.strftime("%H%M"), key=f"t_e_{item['id']}", max_chars=4)
+                        
                         edit_purp = st.text_area("เหตุผล", str(item['purpose']), key=f"purp_{item['id']}")
+
+                        # --- Logic แปลงค่า 4 หลักกลับเป็นรูปแบบ 08:00 เพื่อส่งไปบันทึก ---
+                        try:
+                            # เติม : ให้เองเบื้องหลัง (0800 -> 08:00)
+                            f_start = f"{a_t_start[:2]}:{a_t_start[2:]}"
+                            f_end = f"{a_t_end[:2]}:{a_t_end[2:]}"
+                            
+                            edit_start = datetime.combine(a_d_start, datetime.strptime(f_start, "%H:%M").time()).isoformat()
+                            edit_end = datetime.combine(a_d_end, datetime.strptime(f_end, "%H:%M").time()).isoformat()
+                        except:
+                            # ถ้า Admin คีย์ผิด ให้ใช้ค่าเดิมใน Database ไปก่อนครับ
+                            edit_start, edit_end = item['start_time'], item['end_time']
                     with col3:
                         st.write("")
                         btn_app, btn_rej, btn_can = st.columns(3)
