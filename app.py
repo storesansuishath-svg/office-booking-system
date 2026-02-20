@@ -175,11 +175,31 @@ elif choice == "🔑 Admin (อนุมัติ)":
                         edit_req = st.text_input("ผู้ขอ", str(item['requester']), key=f"req_{item['id']}")
                         edit_dept = st.text_input("แผนก", str(item['dept']), key=f"dept_{item['id']}")
                     with col2:
-                        # --- เพิ่มช่องแก้ไขปลายทางในหน้า Admin ---
-                        edit_dest = st.text_input("ปลายทาง", str(item.get('destination', '-')), key=f"dest_{item['id']}")
-                        edit_start = st.text_input("เริ่ม", str(item['start_time']), key=f"start_{item['id']}")
-                        edit_end = st.text_input("สิ้นสุด", str(item['end_time']), key=f"end_{item['id']}")
+                        curr_s = datetime.fromisoformat(item['start_time'])
+                        curr_e = datetime.fromisoformat(item['end_time'])
+
+                        # แยกวันที่และเวลาให้ Admin
+                        a_d_s = st.date_input("วันที่เริ่ม", curr_s.date(), key=f"ds_{item['id']}")
+                        a_t_s = st.text_input("เวลาเริ่ม", curr_s.strftime("%H:%M"), key=f"ts_{item['id']}")
+                        
+                        st.markdown("---")
+                        
+                        a_d_e = st.date_input("วันที่สิ้นสุด", curr_e.date(), key=f"de_{item['id']}")
+                        a_t_e = st.text_input("เวลาสิ้นสุด", curr_e.strftime("%H:%M"), key=f"te_{item['id']}")
+                        
                         edit_purp = st.text_area("เหตุผล", str(item['purpose']), key=f"purp_{item['id']}")
+
+                        # --- รวมร่าง (พร้อมระบบเติม : อัตโนมัติ) ---
+                        try:
+                            s_fix = a_t_s.replace(":", "")
+                            if len(s_fix) == 4: a_t_s = f"{s_fix[:2]}:{s_fix[2:]}"
+                            e_fix = a_t_e.replace(":", "")
+                            if len(e_fix) == 4: a_t_e = f"{e_fix[:2]}:{e_fix[2:]}"
+                            
+                            edit_start = datetime.combine(a_d_s, datetime.strptime(a_t_s, "%H:%M").time()).isoformat()
+                            edit_end = datetime.combine(a_d_e, datetime.strptime(a_t_e, "%H:%M").time()).isoformat()
+                        except:
+                            edit_start, edit_end = item['start_time'], item['end_time']
                     with col3:
                         st.write("")
                         btn_app, btn_rej, btn_can = st.columns(3)
