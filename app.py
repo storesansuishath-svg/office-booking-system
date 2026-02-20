@@ -97,18 +97,38 @@ if choice == "📝 จองใหม่":
 
 # --- หน้าตารางงาน (Real-time) ---
 elif choice == "📅 ตารางงาน (Real-time)":
-    st.subheader("📅 ตารางงานปัจจุบัน (แสดงย้อนหลัง 24 ชม.)")
-    # 💡 แก้ไขจุดที่ 2: ใช้ errors='coerce' ป้องกันหน้าจอสีแดง ValueError
-    threshold_show = (datetime.now() - timedelta(hours=24)).isoformat()
-    res_db = supabase.table("bookings").select("*").eq("status", "Approved").gt("end_time", threshold_show).order("start_time").execute()
+    st.subheader("📅 ตารางงานปัจจุบันและล่วงหน้า")
+    view_cat = st.radio("เลือกประเภทที่จะแสดง", ["ทั้งหมด", "รถยนต์", "ห้องประชุม"], horizontal=True)
+    
+    # 💡 แก้เฉพาะบรรทัดนี้: ให้ดึงข้อมูลย้อนหลังไป 24 ชม. จากเวลาปัจจุบัน
+    threshold_24h = (datetime.now() - timedelta(hours=24)).isoformat()
+    res_db = supabase.table("bookings").select("*").eq("status", "Approved").gt("end_time", threshold_24h).order("start_time").execute()
+    
     df = pd.DataFrame(res_db.data)
     
-    if df.empty: st.info("ขณะนี้ไม่มีรายการจอง")
+    if df.empty:
+        st.info("ขณะนี้ไม่มีรายการจอง")
     else:
-        df['start_fmt'] = pd.to_datetime(df['start_time'], errors='coerce').dt.strftime('%d/%m/%Y %H:%M')
-        df['end_fmt'] = pd.to_datetime(df['end_time'], errors='coerce').dt.strftime('%d/%m/%Y %H:%M')
-        st.dataframe(df[['resource', 'start_fmt', 'end_fmt', 'requester', 'purpose', 'destination']], use_container_width=True)
+        if view_cat == "รถยนต์":
+            df = df[df['resource'].isin(["Civic (ตุ้ม)", "Civic (บอล)", "Camry (เนก)", "MG ขับเอง"])]
+        elif view_cat == "ห้องประชุม":
+            df = df[df['resource'].isin(["ห้องชั้น 1 (ห้องใหญ่)", "ห้องชั้น 2", "ห้อง VIP", "ห้องชั้นลอย", "ห้อง Production"])]
 
+        if not df.empty:
+            # --- รูปแบบตารางเดิมของพี่สุดหล่อ (ห้ามเปลี่ยน) ---
+            df_show = df.copy().reset_index(drop=True)
+            df_show.index += 1
+            df_show.insert(0, 'ลำดับ/No.', df_show.index)
+            
+            # ใส่ errors='coerce' เพื่อกันหน้าจอสีแดงเผื่อเจอข้อมูลเก่าครับ
+            df_show['start_fmt'] = pd.to_datetime(df_show['start_time'], errors='coerce').dt.strftime('%d/%m/%Y %H:%M')
+            df_show['end_fmt'] = pd.to_datetime(df_show['end_time'], errors='coerce').dt.strftime('%d/%m/%Y %H:%M')
+            
+            df_disp = df_show[['ลำดับ/No.', 'resource', 'start_fmt', 'end_fmt', 'requester', 'purpose', 'destination']]
+            
+            # หัวข้อภาษาไทย/อังกฤษ ตามที่พี่ตั้งไว้เป๊ะๆ ครับ
+            df_disp.columns = ['ลำดับ / No.', 'รายการ / Resource', 'เวลาเริ่ม / Start Time', 'เวลาสิ้นสุด / End Time', 'ผู้จอง / Name', 'วัตถุประสงค์ / Purpose', 'ปลายทาง / Destination']
+            st.dataframe(df_disp, use_container_width=True)
 # --- หน้า Admin (อนุมัติ) ---
 elif choice == "🔑 Admin (อนุมัติ)":
     st.subheader("🔑 ระบบอนุมัติการจอง")
