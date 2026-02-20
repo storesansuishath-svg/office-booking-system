@@ -92,9 +92,32 @@ if choice == "📝 จองใหม่":
         phone = st.text_input("เบอร์โทรศัพท์")
         dept = st.text_input("แผนก")
     with col2:
-        t_start = st.datetime_input("เวลาเริ่ม", datetime.now())
-        t_end = st.datetime_input("เวลาสิ้นสุด", datetime.now() + timedelta(hours=1))
+        # 1. ส่วนวันที่ (Date Picker)
+        d_start = st.date_input("วันที่เริ่ม", datetime.now().date())
+        # 2. ส่วนเวลา (พิมพ์ 4 หลัก ระบบจะเติม : ให้เอง)
+        t_start_in = st.text_input("เวลาเริ่ม (เช่น 0800)", value="08:00", max_chars=5)
+        
+        st.markdown("---") # เส้นคั่นเพื่อความสวยงาม
+        
+        d_end = st.date_input("วันที่สิ้นสุด", datetime.now().date())
+        t_end_in = st.text_input("เวลาสิ้นสุด (เช่น 1700)", value="17:00", max_chars=5)
+        
         reason = st.text_area("วัตถุประสงค์การใช้งาน")
+
+        # --- ส่วนแปลงค่า (Logic จัดการเครื่องหมาย :) ---
+        def fix_time_format(t_str):
+            clean = t_str.replace(":", "").strip()
+            if len(clean) == 4:
+                return f"{clean[:2]}:{clean[2:]}"
+            return t_str
+
+        try:
+            t_start = datetime.combine(d_start, datetime.strptime(fix_time_format(t_start_in), "%H:%M").time())
+            t_end = datetime.combine(d_end, datetime.strptime(fix_time_format(t_end_in), "%H:%M").time())
+        except:
+            # กรณีคีย์ผิดรูปแบบ ให้ใช้เวลาปัจจุบันป้องกัน Error
+            t_start = datetime.now()
+            t_end = datetime.now() + timedelta(hours=1)
 
     if st.button("ยืนยันการส่งคำขอจอง"):
         if not name or not phone or not reason or not dept:
