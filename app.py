@@ -99,6 +99,8 @@ if choice == "📝 จองใหม่":
 elif choice == "📅 ตารางงาน (Real-time)":
     st.subheader("📅 ตารางงานปัจจุบันและล่วงหน้า")
     view_cat = st.radio("เลือกประเภทที่จะแสดง", ["ทั้งหมด", "รถยนต์", "ห้องประชุม"], horizontal=True)
+    
+    # ดึงข้อมูลย้อนหลัง 24 ชม.
     threshold_24h = (datetime.now() - timedelta(hours=24)).isoformat()
     res_db = supabase.table("bookings").select("*").eq("status", "Approved").gt("end_time", threshold_24h).order("start_time").execute()
     df = pd.DataFrame(res_db.data)
@@ -106,34 +108,36 @@ elif choice == "📅 ตารางงาน (Real-time)":
     if df.empty:
         st.info("ขณะนี้ไม่มีรายการจอง")
     else:
+        # ตัวกรองประเภท
         if view_cat == "รถยนต์":
             df = df[df['resource'].isin(["Civic (ตุ้ม)", "Civic (บอล)", "Camry (เนก)", "MG ขับเอง"])]
         elif view_cat == "ห้องประชุม":
             df = df[df['resource'].isin(["ห้องชั้น 1 (ห้องใหญ่)", "ห้องชั้น 2", "ห้อง VIP", "ห้องชั้นลอย", "ห้อง Production"])]
 
         if not df.empty:
+            # แสดงตารางรูปแบบเดิมของพี่สุดหล่อ
             df_show = df.copy().reset_index(drop=True)
             df_show.index += 1
             df_show.insert(0, 'ลำดับ/No.', df_show.index)
             df_show['start_fmt'] = pd.to_datetime(df_show['start_time'], errors='coerce').dt.strftime('%d/%m/%Y %H:%M')
             df_show['end_fmt'] = pd.to_datetime(df_show['end_time'], errors='coerce').dt.strftime('%d/%m/%Y %H:%M')
+            
             df_disp = df_show[['ลำดับ/No.', 'resource', 'start_fmt', 'end_fmt', 'requester', 'purpose', 'destination']]
             df_disp.columns = ['ลำดับ / No.', 'รายการ / Resource', 'เวลาเริ่ม / Start Time', 'เวลาสิ้นสุด / End Time', 'ผู้จอง / Name', 'วัตถุประสงค์ / Purpose', 'ปลายทาง / Destination']
             st.dataframe(df_disp, use_container_width=True)
 
-            # --- 💡 เติมส่วนแก้ไขข้อมูลที่หายไปกลับมาให้แล้วครับพี่สุดหล่อ ---
             st.markdown("---")
             st.subheader("🛠️ แก้ไขข้อมูล (Admin Only)")
             with st.expander("คลิกเพื่อแก้ไขรายการ"):
                 edit_id = st.selectbox("เลือก ID ที่ต้องการแก้ไข", df['id'].tolist(), key="sel_id_table")
                 row = df[df['id'] == edit_id].iloc[0]
+                
                 with st.form("edit_form_table"):
                     col_e1, col_e2 = st.columns(2)
                     n_res = col_e1.text_input("รายการ / Resource", str(row['resource']))
                     n_req = col_e1.text_input("ผู้จอง / Name", str(row['requester']))
                     n_dept = col_e1.text_input("แผนก / Dept", str(row.get('dept', '-')))
 
-                    # แยกปฏิทินและเวลา 4 หลักในหน้าแก้ไข
                     dt_s = pd.to_datetime(row['start_time'], errors='coerce')
                     dt_e = pd.to_datetime(row['end_time'], errors='coerce')
                     n_d_s = col_e2.date_input("วันที่เริ่ม", dt_s.date() if pd.notnull(dt_s) else datetime.now().date())
@@ -141,8 +145,12 @@ elif choice == "📅 ตารางงาน (Real-time)":
                     n_d_e = col_e2.date_input("วันที่สิ้นสุด", dt_e.date() if pd.notnull(dt_e) else datetime.now().date())
                     n_t_e = col_e2.text_input("เวลาสิ้นสุด (4 หลัก)", value=dt_e.strftime("%H%M") if pd.notnull(dt_e) else "1700", max_chars=4)
                     
-                    pw = st.text_input("รหัสผ่าน Admin", type="password")
-                    if st.form_submit_button("💾 บันทึกการแก้ไข"):
+                    pw = st.text_input("รหัสผ่านสำหรับการดำเนินการ", type="password")
+                    
+                    # 💡 ปุ่มกด 3 ปุ่มเรียงกันตามที่พี่สุดหล่อต้องการ
+                    b_save, b_del, b_cls = st.columns(3)
+                    
+                    if b_save.form_submit_button("💾 บันทึก"):
                         if pw == "1234":
                             try:
                                 fs = format_time_string(n_t_s); fe = format_time_string(n_t_e)
@@ -153,6 +161,16 @@ elif choice == "📅 ตารางงาน (Real-time)":
                                 st.rerun()
                             except: st.error("รูปแบบเวลาผิด")
                         else: st.error("รหัสผ่านไม่ถูกต้อง")
+
+                    if b_del.form_submit_button("🗑️ ลบรายการ"):
+                        if pw == "s1234":
+                            supabase.table("bookings").delete().eq("id", edit_id).execute()
+                            st.success("ลบรายการเรียบร้อย!")
+                            st.rerun()
+                        else: st.error("รหัสผ่านไม่ถูกต้อง (การลบต้องใช้รหัส Admin)")
+
+                    if b_cls.form_submit_button("✖️ ปิด"):
+                        st.rerun()
 
 # --- หน้า Admin (อนุมัติ) ---
 elif choice == "🔑 Admin (อนุมัติ)":
