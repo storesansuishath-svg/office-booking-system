@@ -259,12 +259,20 @@ elif choice == "📅 ตารางงาน (Real-time)":
                     col_e1, col_e2 = st.columns(2)
                     n_res = col_e1.text_input("รายการ / Resource", str(row['resource']))
                     n_req = col_e1.text_input("ผู้จอง / Name", str(row['requester']))
-                    # --- เพิ่มการแก้ไขแผนก ---
                     n_dept = col_e1.text_input("แผนก / Dept", str(row.get('dept', '-')))
 
-                    n_start = col_e2.text_input("เริ่ม (ISO Format)", str(row['start_time']))
-                    n_end = col_e2.text_input("สิ้นสุด (ISO Format)", str(row['end_time']))
-                    # --- เพิ่มการแก้ไขวัตถุประสงค์และปลายทาง ---
+                    # 1. ดึงเวลาเดิมมาแยกเป็น วัน และ เวลา (4 หลัก)
+                    dt_s = datetime.fromisoformat(row['start_time'])
+                    dt_e = datetime.fromisoformat(row['end_time'])
+                    
+                    # 2. ส่วนของวันที่ (ปฏิทิน)
+                    n_d_start = col_e2.date_input("วันที่เริ่ม", dt_s.date())
+                    n_d_end = col_e2.date_input("วันที่สิ้นสุด", dt_e.date())
+
+                    # 3. ส่วนของเวลา (พิมพ์เลข 4 หลัก เช่น 0800)
+                    n_t_start_raw = col_e2.text_input("เวลาเริ่ม (พิมพ์ 4 หลัก)", value=dt_s.strftime("%H%M"), max_chars=4)
+                    n_t_end_raw = col_e2.text_input("เวลาสิ้นสุด (พิมพ์ 4 หลัก)", value=dt_e.strftime("%H%M"), max_chars=4)
+
                     n_purp = col_e2.text_area("วัตถุประสงค์ / Purpose", str(row.get('purpose', '-')))
                     n_dest = col_e2.text_input("ปลายทาง / Destination", str(row.get('destination', '-')))
                     
@@ -273,19 +281,25 @@ elif choice == "📅 ตารางงาน (Real-time)":
                     
                     if b_save.form_submit_button("💾 บันทึก"):
                         if pw == "1234":
-                            # --- ปรับคำสั่ง Update ให้บันทึกครบทุกฟิลด์ ---
-                            update_payload = {
-                                "resource": n_res, 
-                                "requester": n_req, 
-                                "dept": n_dept,
-                                "start_time": n_start, 
-                                "end_time": n_end,
-                                "purpose": n_purp,
-                                "destination": n_dest
-                            }
-                            supabase.table("bookings").update(update_payload).eq("id", edit_id).execute()
-                            st.success("บันทึกข้อมูลเรียบร้อย!")
-                            st.rerun()
+                            try:
+                                # แปลงเลข 4 หลักกลับเป็นรูปแบบ HH:mm (1200 -> 12:00)
+                                fmt_s = f"{n_t_start_raw[:2]}:{n_t_start_raw[2:]}"
+                                fmt_e = f"{n_t_end_raw[:2]}:{n_t_end_raw[2:]}"
+                                
+                                # รวมร่างวันและเวลา
+                                n_start = datetime.combine(n_d_start, datetime.strptime(fmt_s, "%H:%M").time()).isoformat()
+                                n_end = datetime.combine(n_d_end, datetime.strptime(fmt_e, "%H:%M").time()).isoformat()
+
+                                update_payload = {
+                                    "resource": n_res, "requester": n_req, "dept": n_dept,
+                                    "start_time": n_start, "end_time": n_end,
+                                    "purpose": n_purp, "destination": n_dest
+                                }
+                                supabase.table("bookings").update(update_payload).eq("id", edit_id).execute()
+                                st.success("บันทึกข้อมูลเรียบร้อย!")
+                                st.rerun()
+                            except:
+                                st.error("⚠️ รูปแบบเวลาไม่ถูกต้อง กรุณาตรวจสอบเลข 4 หลักครับ")
                         else: st.error("รหัสผ่านไม่ถูกต้อง")
                     
                     if b_del.form_submit_button("🗑️ ลบรายการ"):
