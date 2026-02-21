@@ -108,12 +108,24 @@ elif choice == "📅 ตารางงาน (Real-time)":
             df_show = df.copy().reset_index(drop=True)
             df_show.index += 1
             df_show.insert(0, 'ลำดับ/No.', df_show.index)
-            # 🛡️ แก้ไขจุดหน้าจอแดง: ใช้ errors='coerce' เพื่อข้ามข้อมูลที่รูปแบบเสียครับ
+            
+            # จัดรูปแบบเวลาให้สวยงาม
             df_show['start_fmt'] = pd.to_datetime(df_show['start_time'], errors='coerce').dt.strftime('%d/%m/%Y %H:%M')
             df_show['end_fmt'] = pd.to_datetime(df_show['end_time'], errors='coerce').dt.strftime('%d/%m/%Y %H:%M')
+            
             df_disp = df_show[['ลำดับ/No.', 'resource', 'start_fmt', 'end_fmt', 'requester', 'purpose', 'destination']]
             df_disp.columns = ['ลำดับ / No.', 'รายการ / Resource', 'เวลาเริ่ม / Start Time', 'เวลาสิ้นสุด / End Time', 'ผู้จอง / Name', 'วัตถุประสงค์ / Purpose', 'ปลายทาง / Destination']
-            st.dataframe(df_disp, use_container_width=True)
+
+            # 💡 จุดสำคัญ: ใช้ st.dataframe แบบมี selection
+            event = st.dataframe(
+                df_disp, 
+                use_container_width=True, 
+                on_select="rerun",       # เมื่อคลิกที่แถว ให้รีรันโปรแกรมทันที
+                selection_mode="single_row"  # เลือกได้ทีละ 1 แถว
+            )
+
+            # ตรวจสอบว่ามีการเลือกแถวหรือไม่
+            selected_rows = event.selection.rows
 
             st.markdown("---")
             st.subheader("🛠️ แก้ไข/ลบ ข้อมูล (Admin Only)")
