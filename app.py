@@ -175,30 +175,6 @@ elif choice == "📅 ตารางงาน (Real-time)":
                                 st.success("อัปเดตข้อมูลเรียบร้อย!"); st.rerun()
                             except: st.error("⚠️ รูปแบบเวลาผิดกรุณาตรวจสอบ")
                         else: st.error("❌ รหัสผ่านไม่ถูกต้อง")
-                    n_req = col_e1.text_input("ผู้จอง", str(row['requester']))
-                    dt_s = pd.to_datetime(row['start_time'], errors='coerce')
-                    dt_e = pd.to_datetime(row['end_time'], errors='coerce')
-                    n_d_s = col_e2.date_input("วันที่เริ่ม", dt_s.date() if pd.notnull(dt_s) else datetime.now().date())
-                    n_t_s = col_e2.text_input("เวลาเริ่ม (4 หลัก)", value=dt_s.strftime("%H%M") if pd.notnull(dt_s) else "0800", max_chars=4)
-                    n_d_e = col_e2.date_input("วันที่สิ้นสุด", dt_e.date() if pd.notnull(dt_e) else datetime.now().date())
-                    n_t_e = col_e2.text_input("เวลาสิ้นสุด (4 หลัก)", value=dt_e.strftime("%H%M") if pd.notnull(dt_e) else "1700", max_chars=4)
-                    pw = st.text_input("รหัสผ่านสำหรับการดำเนินการ", type="password")
-                    b_save, b_del, b_cls = st.columns(3)
-                    if b_save.form_submit_button("💾 บันทึก"):
-                        if pw == "1234":
-                            try:
-                                fs, fe = format_time_string(n_t_s), format_time_string(n_t_e)
-                                final_s = datetime.combine(n_d_s, datetime.strptime(fs, "%H:%M").time()).isoformat()
-                                final_e = datetime.combine(n_d_e, datetime.strptime(fe, "%H:%M").time()).isoformat()
-                                supabase.table("bookings").update({"resource": n_res, "requester": n_req, "start_time": final_s, "end_time": final_e}).eq("id", edit_id).execute()
-                                st.success("อัปเดตแล้ว!"); st.rerun()
-                            except: st.error("เวลาผิด")
-                        else: st.error("รหัสผ่านไม่ถูกต้อง")
-                    if b_del.form_submit_button("🗑️ ลบรายการ"):
-                        if pw == "s1234":
-                            supabase.table("bookings").delete().eq("id", edit_id).execute()
-                            st.success("ลบแล้ว!"); st.rerun()
-                        else: st.error("รหัสผ่านไม่ถูกต้อง")
                     if b_cls.form_submit_button("✖️ ปิด"): st.rerun()
 
 # --- หน้า Admin (อนุมัติ) ---
