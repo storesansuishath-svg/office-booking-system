@@ -122,20 +122,59 @@ elif choice == "📅 ตารางงาน (Real-time)":
                 row = df[df['id'] == edit_id].iloc[0]
                 with st.form("edit_form_table"):
                     col_e1, col_e2 = st.columns(2)
-                    # --- 1. รายชื่อมาตรฐาน (แก้เป็น "MG" ตามที่พี่ต้องการครับ) ---
+                    
+                    # --- ฝั่งซ้าย (Resource, Requester, Dept, Destination) ---
                     resource_options = [
                         "Civic (ตุ้ม)", "Civic (บอล)", "Camry (เนก)", "MG", 
                         "ห้องชั้น 1 (ห้องใหญ่)", "ห้องชั้น 2", "ห้อง VIP", "ห้องชั้นลอย", "ห้อง Production"
                     ]
-
-                    # --- 2. หาค่าลำดับปัจจุบัน (ถ้าชื่อเดิมใน DB ไม่ตรงกับในลิสต์ จะให้เริ่มที่ตัวแรก) ---
                     try:
                         current_index = resource_options.index(row['resource'])
                     except ValueError:
-                        current_index = 0 
+                        current_index = 0
 
-                    # --- 3. เปลี่ยนเป็นตัวเลือกดรอปดาวน์ ---
                     n_res = col_e1.selectbox("รายการ / Resource", options=resource_options, index=current_index)
+                    n_req = col_e1.text_input("ผู้จอง / Name", str(row['requester']))
+                    n_dept = col_e1.text_input("แผนก / Dept", str(row.get('dept', '-')))
+                    # ✅ เพิ่มช่อง ปลายทาง
+                    n_dest = col_e1.text_input("ปลายทาง / Destination", str(row.get('destination', '-')))
+
+                    # --- ฝั่งขวา (Date, Time, Purpose) ---
+                    dt_s = pd.to_datetime(row['start_time'], errors='coerce')
+                    dt_e = pd.to_datetime(row['end_time'], errors='coerce')
+                    
+                    n_d_s = col_e2.date_input("วันที่เริ่ม", dt_s.date() if pd.notnull(dt_s) else datetime.now().date())
+                    n_t_s = col_e2.text_input("เวลาเริ่ม (4 หลัก)", value=dt_s.strftime("%H%M") if pd.notnull(dt_s) else "0800", max_chars=4)
+                    n_d_e = col_e2.date_input("วันที่สิ้นสุด", dt_e.date() if pd.notnull(dt_e) else datetime.now().date())
+                    n_t_e = col_e2.text_input("เวลาสิ้นสุด (4 หลัก)", value=dt_e.strftime("%H%M") if pd.notnull(dt_e) else "1700", max_chars=4)
+                    # ✅ เพิ่มช่อง วัตถุประสงค์
+                    n_purp = col_e2.text_area("วัตถุประสงค์ / Purpose", str(row.get('purpose', '-')))
+                    
+                    pw = st.text_input("รหัสผ่านสำหรับการดำเนินการ", type="password")
+                    b_save, b_del, b_cls = st.columns(3)
+
+                    if b_save.form_submit_button("💾 บันทึก"):
+                        if pw == "1234":
+                            try:
+                                fs = format_time_string(n_t_s)
+                                fe = format_time_string(n_t_e)
+                                final_s = datetime.combine(n_d_s, datetime.strptime(fs, "%H:%M").time()).isoformat()
+                                final_e = datetime.combine(n_d_e, datetime.strptime(fe, "%H:%M").time()).isoformat()
+                                
+                                # ✅ อัปเดตข้อมูลให้ครบทุกฟิลด์ (รวมวัตถุประสงค์และปลายทาง)
+                                update_data = {
+                                    "resource": n_res, 
+                                    "requester": n_req, 
+                                    "dept": n_dept, 
+                                    "start_time": final_s, 
+                                    "end_time": final_e,
+                                    "purpose": n_purp,
+                                    "destination": n_dest
+                                }
+                                supabase.table("bookings").update(update_data).eq("id", edit_id).execute()
+                                st.success("อัปเดตข้อมูลเรียบร้อย!"); st.rerun()
+                            except: st.error("⚠️ รูปแบบเวลาผิดกรุณาตรวจสอบ")
+                        else: st.error("❌ รหัสผ่านไม่ถูกต้อง")
                     n_req = col_e1.text_input("ผู้จอง", str(row['requester']))
                     dt_s = pd.to_datetime(row['start_time'], errors='coerce')
                     dt_e = pd.to_datetime(row['end_time'], errors='coerce')
