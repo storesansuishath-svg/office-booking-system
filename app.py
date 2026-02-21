@@ -96,86 +96,82 @@ elif choice == "📅 ตารางงาน (Real-time)":
     st.subheader("📅 ตารางงานปัจจุบันและล่วงหน้า")
     view_cat = st.radio("เลือกประเภท", ["ทั้งหมด", "รถยนต์", "ห้องประชุม"], horizontal=True)
     now_iso = datetime.now().isoformat()
+    
+    # ดึงข้อมูลจาก Supabase
     res_db = supabase.table("bookings").select("*").eq("status", "Approved").gt("end_time", now_iso).order("start_time").execute()
     df = pd.DataFrame(res_db.data)
     
-    if df.empty: st.info("ขณะนี้ไม่มีรายการจอง")
+    if df.empty:
+        st.info("ขณะนี้ไม่มีรายการจอง")
     else:
-        if view_cat == "รถยนต์": df = df[df['resource'].isin(["Civic (ตุ้ม)", "Civic (บอล)", "Camry (เนก)", "MG"])]
-        elif view_cat == "ห้องประชุม": df = df[df['resource'].isin(["ห้องชั้น 1 (ห้องใหญ่)", "ห้องชั้น 2", "ห้อง VIP", "ห้องชั้นลอย", "ห้อง Production"])]
+        # 1. กรองข้อมูลตามหมวดหมู่
+        if view_cat == "รถยนต์":
+            df = df[df['resource'].isin(["Civic (ตุ้ม)", "Civic (บอล)", "Camry (เนก)", "MG"])]
+        elif view_cat == "ห้องประชุม":
+            df = df[df['resource'].isin(["ห้องชั้น 1 (ห้องใหญ่)", "ห้องชั้น 2", "ห้อง VIP", "ห้องชั้นลอย", "ห้อง Production"])]
         
         if not df.empty:
+            # 2. เตรียม Dataframe สำหรับแสดงผล (ต้องทำ reset_index เพื่อให้คลิกแล้ว Index ตรงกัน)
             df_show = df.copy().reset_index(drop=True)
-            df_show.index += 1
-            df_show.insert(0, 'ลำดับ/No.', df_show.index)
             
-            # จัดรูปแบบเวลาให้สวยงาม
+            # จัดรูปแบบเวลาสำหรับโชว์ในตาราง
             df_show['start_fmt'] = pd.to_datetime(df_show['start_time'], errors='coerce').dt.strftime('%d/%m/%Y %H:%M')
             df_show['end_fmt'] = pd.to_datetime(df_show['end_time'], errors='coerce').dt.strftime('%d/%m/%Y %H:%M')
             
-            df_disp = df_show[['ลำดับ/No.', 'resource', 'start_fmt', 'end_fmt', 'requester', 'purpose', 'destination']]
-            df_disp.columns = ['ลำดับ / No.', 'รายการ / Resource', 'เวลาเริ่ม / Start Time', 'เวลาสิ้นสุด / End Time', 'ผู้จอง / Name', 'วัตถุประสงค์ / Purpose', 'ปลายทาง / Destination']
+            # เลือก Column ที่จะโชว์ (สร้าง Column ลำดับหลอกๆ ไว้ดูเล่น)
+            df_disp = df_show[['resource', 'start_fmt', 'end_fmt', 'requester', 'purpose', 'destination']].copy()
+            df_disp.columns = ['รายการ / Resource', 'เวลาเริ่ม / Start Time', 'เวลาสิ้นสุด / End Time', 'ผู้จอง / Name', 'วัตถุประสงค์ / Purpose', 'ปลายทาง / Destination']
 
-            # 💡 จุดสำคัญ: ใช้ st.dataframe แบบมี selection
+            # 3. แสดงตารางแบบมีระบบ Selection
             event = st.dataframe(
                 df_disp, 
                 use_container_width=True, 
-                on_select="rerun",       # เมื่อคลิกที่แถว ให้รีรันโปรแกรมทันที
-                selection_mode="single_row"  # เลือกได้ทีละ 1 แถว
+                on_select="rerun",       # คลิกปุ๊บ รีรันปั๊บ
+                selection_mode="single_row",
+                hide_index=False         # โชว์ Index ฝั่งซ้ายเพื่อให้ User คลิกง่ายๆ
             )
 
-            # ตรวจสอบว่ามีการเลือกแถวหรือไม่
+            # 4. ตรวจสอบการคลิก
             selected_rows = event.selection.rows
 
             st.markdown("---")
-            st.subheader("🛠️ แก้ไข/ลบ ข้อมูล (Admin Only)")
-            # --- 💡 จุดที่ 2: เปลี่ยนจากการเลือก ID เป็นการดึงค่าจากการคลิกตาราง ---
-            if not selected_rows:
-                st.info("👆 **กรุณาคลิกเลือกแถวในตารางด้านบน** เพื่อแก้ไขหรือลบข้อมูล")
-                # ใช้ระเบียบวิธีหยุดการรันฟอร์มไว้ก่อนถ้ายังไม่มีการเลือก
-                st.stop() 
             
-            # ดึงข้อมูลจากแถวที่พี่คลิก (Index จากตารางที่แสดง)
-            row_idx = selected_rows[0]
-            row = df.iloc[row_idx]
-            edit_id = row['id']
-            
-            st.success(f"📝 คุณกำลังเลือกแก้ไขรายการ: **{row['resource']}** ของคุณ **{row['requester']}**")
-            
-            with st.expander("🛠️ เปิดฟอร์มแก้ไขข้อมูล", expanded=True):
+            if selected_rows:
+                # 💡 จุดสำคัญ: ดึงข้อมูลจาก df_show ด้วย index ที่คลิกมา
+                row_idx = selected_rows[0]
+                row = df_show.iloc[row_idx]
+                edit_id = row['id']
+
+                st.success(f"📝 กำลังแก้ไขรายการ: **{row['resource']}** (ผู้จอง: {row['requester']})")
                 
-                # --- เริ่มฟอร์มแก้ไข (ทับบรรทัด 123) ---
                 with st.form("edit_form_table"):
                     col_e1, col_e2 = st.columns(2)
                     
-                    # --- ฝั่งซ้าย (Resource มาตรฐาน, Name, Dept, Destination) ---
+                    # --- รายการทรัพยากร (selectbox ตามที่พี่ต้องการ) ---
                     resource_options = [
                         "Civic (ตุ้ม)", "Civic (บอล)", "Camry (เนก)", "MG", 
                         "ห้องชั้น 1 (ห้องใหญ่)", "ห้องชั้น 2", "ห้อง VIP", "ห้องชั้นลอย", "ห้อง Production"
                     ]
                     try:
-                        current_index = resource_options.index(row['resource'])
-                    except ValueError:
-                        current_index = 0
+                        curr_idx = resource_options.index(row['resource'])
+                    except:
+                        curr_idx = 0
 
-                    n_res = col_e1.selectbox("รายการ / Resource", options=resource_options, index=current_index)
+                    n_res = col_e1.selectbox("รายการ / Resource", options=resource_options, index=curr_idx)
                     n_req = col_e1.text_input("ผู้จอง / Name", str(row['requester']))
                     n_dept = col_e1.text_input("แผนก / Dept", str(row.get('dept', '-')))
-                    # ✅ เพิ่มช่อง ปลายทาง
                     n_dest = col_e1.text_input("ปลายทาง / Destination", str(row.get('destination', '-')))
 
-                    # --- ฝั่งขวา (Date, Time, Purpose) ---
+                    # --- วันเวลา ---
                     dt_s = pd.to_datetime(row['start_time'], errors='coerce')
                     dt_e = pd.to_datetime(row['end_time'], errors='coerce')
-                    
                     n_d_s = col_e2.date_input("วันที่เริ่ม", dt_s.date() if pd.notnull(dt_s) else datetime.now().date())
                     n_t_s = col_e2.text_input("เวลาเริ่ม (4 หลัก)", value=dt_s.strftime("%H%M") if pd.notnull(dt_s) else "0800", max_chars=4)
                     n_d_e = col_e2.date_input("วันที่สิ้นสุด", dt_e.date() if pd.notnull(dt_e) else datetime.now().date())
                     n_t_e = col_e2.text_input("เวลาสิ้นสุด (4 หลัก)", value=dt_e.strftime("%H%M") if pd.notnull(dt_e) else "1700", max_chars=4)
-                    # ✅ เพิ่มช่อง วัตถุประสงค์
                     n_purp = col_e2.text_area("วัตถุประสงค์ / Purpose", str(row.get('purpose', '-')))
                     
-                    pw = st.text_input("รหัสผ่านสำหรับการดำเนินการ", type="password")
+                    pw = st.text_input("รหัสผ่าน Admin", type="password")
                     b_save, b_del, b_cls = st.columns(3)
 
                     if b_save.form_submit_button("💾 บันทึก"):
@@ -184,8 +180,6 @@ elif choice == "📅 ตารางงาน (Real-time)":
                                 fs, fe = format_time_string(n_t_s), format_time_string(n_t_e)
                                 final_s = datetime.combine(n_d_s, datetime.strptime(fs, "%H:%M").time()).isoformat()
                                 final_e = datetime.combine(n_d_e, datetime.strptime(fe, "%H:%M").time()).isoformat()
-                                
-                                # ✅ อัปเดตข้อมูลครบทุกช่อง
                                 supabase.table("bookings").update({
                                     "resource": n_res, "requester": n_req, "dept": n_dept,
                                     "start_time": final_s, "end_time": final_e,
@@ -199,11 +193,12 @@ elif choice == "📅 ตารางงาน (Real-time)":
                         if pw == "s1234":
                             supabase.table("bookings").delete().eq("id", edit_id).execute()
                             st.success("ลบรายการแล้ว!"); st.rerun()
-                        else: st.error("❌ รหัสผ่าน Admin สำหรับการลบไม่ถูกต้อง")
+                        else: st.error("❌ รหัสผ่านไม่ถูกต้อง")
                     
                     if b_cls.form_submit_button("✖️ ปิด"):
                         st.rerun()
-
+            else:
+                st.info("👆 **กรุณาคลิกเลือกแถวในตารางด้านบน** เพื่อเปิดฟอร์มแก้ไขข้อมูล")
 # --- หน้า Admin (อนุมัติ) ---
 elif choice == "🔑 Admin (อนุมัติ)":
     st.subheader("🔑 ระบบจัดการอนุมัติ")
