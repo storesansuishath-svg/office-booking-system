@@ -156,7 +156,7 @@ elif choice == "📅 ตารางงาน (Real-time)":
                     b_save, b_del, b_cls = st.columns(3)
 
                     if b_save.form_submit_button("💾 บันทึก"):
-                        if pw == "1234":
+                        if pw == "s1234":
                             try:
                                 fs, fe = format_time_string(n_t_s), format_time_string(n_t_e)
                                 final_s = datetime.combine(n_d_s, datetime.strptime(fs, "%H:%M").time()).isoformat()
