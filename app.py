@@ -120,10 +120,12 @@ elif choice == "📅 ตารางงาน (Real-time)":
             with st.expander("คลิกเพื่อแก้ไขรายการ"):
                 edit_id = st.selectbox("เลือก ID", df['id'].tolist(), key="sel_id_table")
                 row = df[df['id'] == edit_id].iloc[0]
+                
+                # --- เริ่มฟอร์มแก้ไข (ทับบรรทัด 123) ---
                 with st.form("edit_form_table"):
                     col_e1, col_e2 = st.columns(2)
                     
-                    # --- ฝั่งซ้าย (Resource, Requester, Dept, Destination) ---
+                    # --- ฝั่งซ้าย (Resource มาตรฐาน, Name, Dept, Destination) ---
                     resource_options = [
                         "Civic (ตุ้ม)", "Civic (บอล)", "Camry (เนก)", "MG", 
                         "ห้องชั้น 1 (ห้องใหญ่)", "ห้องชั้น 2", "ห้อง VIP", "ห้องชั้นลอย", "ห้อง Production"
@@ -156,26 +158,28 @@ elif choice == "📅 ตารางงาน (Real-time)":
                     if b_save.form_submit_button("💾 บันทึก"):
                         if pw == "1234":
                             try:
-                                fs = format_time_string(n_t_s)
-                                fe = format_time_string(n_t_e)
+                                fs, fe = format_time_string(n_t_s), format_time_string(n_t_e)
                                 final_s = datetime.combine(n_d_s, datetime.strptime(fs, "%H:%M").time()).isoformat()
                                 final_e = datetime.combine(n_d_e, datetime.strptime(fe, "%H:%M").time()).isoformat()
                                 
-                                # ✅ อัปเดตข้อมูลให้ครบทุกฟิลด์ (รวมวัตถุประสงค์และปลายทาง)
-                                update_data = {
-                                    "resource": n_res, 
-                                    "requester": n_req, 
-                                    "dept": n_dept, 
-                                    "start_time": final_s, 
-                                    "end_time": final_e,
-                                    "purpose": n_purp,
-                                    "destination": n_dest
-                                }
-                                supabase.table("bookings").update(update_data).eq("id", edit_id).execute()
-                                st.success("อัปเดตข้อมูลเรียบร้อย!"); st.rerun()
-                            except: st.error("⚠️ รูปแบบเวลาผิดกรุณาตรวจสอบ")
+                                # ✅ อัปเดตข้อมูลครบทุกช่อง
+                                supabase.table("bookings").update({
+                                    "resource": n_res, "requester": n_req, "dept": n_dept,
+                                    "start_time": final_s, "end_time": final_e,
+                                    "purpose": n_purp, "destination": n_dest
+                                }).eq("id", edit_id).execute()
+                                st.success("อัปเดตเรียบร้อย!"); st.rerun()
+                            except: st.error("⚠️ เวลาผิดกรุณาตรวจสอบ")
                         else: st.error("❌ รหัสผ่านไม่ถูกต้อง")
-                    if b_cls.form_submit_button("✖️ ปิด"): st.rerun()
+
+                    if b_del.form_submit_button("🗑️ ลบรายการ"):
+                        if pw == "s1234":
+                            supabase.table("bookings").delete().eq("id", edit_id).execute()
+                            st.success("ลบรายการแล้ว!"); st.rerun()
+                        else: st.error("❌ รหัสผ่าน Admin สำหรับการลบไม่ถูกต้อง")
+                    
+                    if b_cls.form_submit_button("✖️ ปิด"):
+                        st.rerun()
 
 # --- หน้า Admin (อนุมัติ) ---
 elif choice == "🔑 Admin (อนุมัติ)":
