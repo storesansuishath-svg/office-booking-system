@@ -20,7 +20,7 @@ def format_time_string(t_raw):
 
 def send_line_notification(booking_id, resource, name, dept, t_start, t_end, purpose, destination, status_text="Pending"):
     render_url = "https://line-booking-system.onrender.com/notify"
-    # ✅ ใช้ Group ID ที่พี่ให้มาครับ
+    # ✅ ใส่ Group ID ของพี่ลงไปตรงนี้
     GROUP_ID = "Cad74a32468ca40051bd7071a6064660d" 
     
     try:
@@ -28,7 +28,8 @@ def send_line_notification(booking_id, resource, name, dept, t_start, t_end, pur
         e_str = t_end.strftime("%H:%M") if isinstance(t_end, datetime) else str(t_end)
         
         payload = {
-            "target_id": GROUP_ID, 
+            "id": booking_id,      # ✅ ต้องส่ง ID ไปด้วย
+            "target_id": GROUP_ID, # ✅ ส่ง ID กลุ่ม
             "resource": resource, 
             "name": name, 
             "dept": dept, 
@@ -36,14 +37,12 @@ def send_line_notification(booking_id, resource, name, dept, t_start, t_end, pur
             "end_date": e_str, 
             "purpose": purpose, 
             "destination": destination,
-            "status": status_text
+            "status": status_text  # ✅ ส่งสถานะ (Pending/Approved)
         }
-        # ส่งข้อมูลไปหา Render
         requests.post(render_url, json=payload, timeout=10)
-        st.toast("🔔 ส่งสัญญาณแจ้งเตือน LINE แล้ว", icon="✅")
+        st.toast("🔔 ส่งแจ้งเตือน LINE แล้ว", icon="✅")
     except: 
         pass
-
 def auto_delete_old_bookings():
     threshold_delete = (datetime.now() - timedelta(days=45)).isoformat()
     try: supabase.table("bookings").delete().lt("end_time", threshold_delete).execute()
