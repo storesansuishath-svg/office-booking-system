@@ -231,15 +231,59 @@ elif choice == "🔑 Admin (อนุมัติ)":
                         supabase.table("bookings").delete().eq("id", item['id']).execute()
                         st.rerun()
 
-# --- หน้ารายงานประจำเดือน ---
+# --- หน้ารายงานประจำเดือน (ฉบับรวม รถ + ห้อง) ---
 elif choice == "📊 รายงานประจำเดือน":
-    st.subheader("📊 รายงานการใช้งาน")
-    if st.text_input("รหัสผ่านรายงาน", type="password") == "s1234":
+    st.subheader("📊 รายงานสรุปการใช้งาน (ย้อนหลัง 45 วัน)")
+    if st.text_input("รหัสผ่านรายงาน", type="password", key="rep_pw") == "s1234":
+        
+        # 1. ดึงข้อมูล Approved ทั้งหมดจาก Supabase
         res_rep = supabase.table("bookings").select("*").eq("status", "Approved").execute()
+        
         if res_rep.data:
             df_rep = pd.DataFrame(res_rep.data)
-            st.dataframe(df_rep, use_container_width=True)
-            buffer = io.BytesIO()
-            with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
-                df_rep.to_excel(writer, index=False)
-            st.download_button("📥 Download Excel", buffer.getvalue(), "Booking_Report.xlsx")
+            
+            # จัดการเรื่องวันที่เพื่อใช้กรองเดือน
+            df_rep['start_time'] = pd.to_datetime(df_rep['start_time'], errors='coerce')
+            df_rep['Month-Year'] = df_rep['start_time'].dt.strftime('%m/%Y')
+            
+            # --- ส่วน Filter หน้ารายงาน ---
+            c1, c2 = st.columns(2)
+            sel_m = c1.selectbox("📅 เลือกเดือน/ปี", sorted(df_rep['Month-Year'].unique(), reverse=True))
+            
+            # ตัวกรองประเภท (ที่พี่สงสัย)
+            rep_type = c2.selectbox("🔎 ประเภททรัพยากร", ["ทั้งหมด", "รถยนต์", "ห้องประชุม"])
+            
+            # 2. เริ่มการกรองข้อมูล
+            final_df = df_rep[df_rep['Month-Year'] == sel_m].copy()
+            
+            if rep_type == "รถยนต์":
+                final_df = final_df[final_df['resource'].str.contains("Civic|Camry|MG", na=False)]
+            elif rep_type == "ห้องประชุม":
+                final_df = final_df[final_df['resource'].str.contains("ห้อง", na=False)]
+            
+            # 3. ปรับแต่งหน้าตาตารางก่อนแสดงผล
+            if not final_df.empty:
+                final_df['วันที่ใช้งาน'] = final_df['start_time'].dt.strftime('%d/%m/%Y %H:%M')
+                # เรียงคอลัมน์ให้ดูง่าย
+                out_display = final_df[['resource', 'requester', 'dept', 'วันที่ใช้งาน', 'destination', 'purpose']]
+                out_display.columns = ['รายการ', 'ผู้จอง', 'แผนก', 'เวลาเริ่ม', 'สถานที่/ปลายทาง', 'วัตถุประสงค์']
+                
+                st.write(f"📋 แสดงข้อมูล: **{rep_type}** ประจำเดือน **{sel_m}**")
+                st.dataframe(out_display, use_container_width=True)
+                
+                # 4. ปุ่ม Download Excel (ใช้สถาปัตยกรรมเดิม)
+                buf = io.BytesIO()
+                try:
+                    with pd.ExcelWriter(buf, engine='xlsxwriter') as w:
+                        out_display.to_excel(w, index=False)
+                    st.download_button(f"📥 Download Excel ({rep_type})", buf.getvalue(), f"Report_{rep_type}_{sel_m}.xlsx")
+                except:
+                    st.download_button("📥 Download CSV (สำรอง)", out_display.to_csv(index=False).encode('utf-8-sig'), "report.csv")
+            else:
+                st.warning(f"❌ ไม่พบข้อมูล {rep_type} ในเดือน {sel_m}")
+        else:
+            st.info("ยังไม่มีข้อมูลการจองที่อนุมัติแล้วในระบบ")
+            
+    elif st.session_state.get('rep_pw') != "":
+        if st.session_state.get('rep_pw') is not None:
+             st.error("รหัสผ่านไม่ถูกต้อง")
