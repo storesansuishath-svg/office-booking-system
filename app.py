@@ -206,6 +206,11 @@ elif choice == "🔑 Admin (อนุมัติ)":
                             supabase.table("bookings").update({"status": "Approved", "start_time": final_t}).eq("id", item['id']).execute()
                             st.rerun()
                         except: st.error("รูปแบบเวลาผิด")
+                    # 2. ✅ เพิ่มปุ่มลบรายการในหน้าอนุมัติ
+                    if col2.button("ลบรายการ 🗑️", key=f"del_{item['id']}", use_container_width=True):
+                        supabase.table("bookings").delete().eq("id", item['id']).execute()
+                        st.warning(f"ลบรายการของคุณ {item['requester']} แล้ว")
+                        st.rerun()
 
 # --- หน้ารายงานประจำเดือน ---
 elif choice == "📊 รายงานประจำเดือน":
