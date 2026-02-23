@@ -213,13 +213,26 @@ elif choice == "🔑 Admin (อนุมัติ)":
                         a_d = st.date_input("วันที่", c_s.date() if pd.notnull(c_s) else datetime.now().date(), key=f"d_{item['id']}")
                         a_t = st.text_input("เวลาเริ่ม (4 หลัก)", c_s.strftime("%H%M") if pd.notnull(c_s) else "0800", key=f"t_{item['id']}", max_chars=4)
                         st.write(f"🚗 {item['resource']} | 👤 {item['requester']} | 📍 {item.get('destination','-')}")
+                    # --- ส่วนนี้อยู่ในเมนู Admin (อนุมัติ) ---
                     if col2.button("อนุมัติ ✅", key=f"app_{item['id']}"):
                         try:
                             f_t = format_time_string(a_t)
                             final_t = datetime.combine(a_d, datetime.strptime(f_t, "%H:%M").time()).isoformat()
+                            
+                            # 1. บันทึกลง Supabase
                             supabase.table("bookings").update({"status": "Approved", "start_time": final_t}).eq("id", item['id']).execute()
+                            
+                            # ✅ 2. เพิ่มคำสั่งส่ง LINE ตรงนี้ครับ!
+                            send_line_notification(
+                                item['id'], item['resource'], item['requester'], item['dept'], 
+                                final_t, item['end_time'], item['purpose'], item.get('destination','-'),
+                                status_text="Approved" 
+                            )
+                            
+                            st.success(f"อนุมัติและแจ้งเตือนคุณ {item['requester']} เรียบร้อย!")
                             st.rerun()
-                        except: st.error("รูปแบบเวลาผิด")
+                        except: 
+                            st.error("รูปแบบเวลาผิด")
                     # 2. ✅ เพิ่มปุ่มลบรายการในหน้าอนุมัติ
                     if col2.button("ลบรายการ 🗑️", key=f"del_{item['id']}", use_container_width=True):
                         supabase.table("bookings").delete().eq("id", item['id']).execute()
