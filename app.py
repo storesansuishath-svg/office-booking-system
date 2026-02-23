@@ -20,14 +20,29 @@ def format_time_string(t_raw):
 
 def send_line_notification(booking_id, resource, name, dept, t_start, t_end, purpose, destination, status_text="Pending"):
     render_url = "https://line-booking-system.onrender.com/notify"
+    # ✅ ใช้ Group ID ที่พี่ให้มาครับ
+    GROUP_ID = "Cad74a32468ca40051bd7071a6064660d" 
+    
     try:
-        # เตรียมเวลาสำหรับส่ง LINE
         s_str = t_start.strftime("%d/%m/%Y %H:%M") if isinstance(t_start, datetime) else str(t_start)
         e_str = t_end.strftime("%H:%M") if isinstance(t_end, datetime) else str(t_end)
-        payload = {"id": booking_id, "resource": resource, "name": name, "dept": dept, "date": s_str, "end_date": e_str, "purpose": purpose, "destination": destination}
+        
+        payload = {
+            "target_id": GROUP_ID, 
+            "resource": resource, 
+            "name": name, 
+            "dept": dept, 
+            "date": s_str, 
+            "end_date": e_str, 
+            "purpose": purpose, 
+            "destination": destination,
+            "status": status_text
+        }
+        # ส่งข้อมูลไปหา Render
         requests.post(render_url, json=payload, timeout=10)
-        st.toast("🔔 ส่งแจ้งเตือน LINE แล้ว", icon="✅")
-    except: pass
+        st.toast("🔔 ส่งสัญญาณแจ้งเตือน LINE แล้ว", icon="✅")
+    except: 
+        pass
 
 def auto_delete_old_bookings():
     threshold_delete = (datetime.now() - timedelta(days=45)).isoformat()
