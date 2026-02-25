@@ -189,37 +189,58 @@ elif choice == "📅 ตารางงาน (Real-time)":
 
             # ส่วนแก้ไขข้อมูล (Full Form)
             st.markdown("---")
+            # --- [จุดแก้ไข: ส่วนดึงข้อมูลมาแสดงในฟอร์ม] ---
             with st.expander("🛠️ จัดการข้อมูล (แก้ไข/ลบ โดย Admin)"):
-                sel_no = st.selectbox("เลือก No. ที่ต้องการจัดการ", df_show['ลำดับ/No.'].tolist(), key="s_edit")
+                sel_no = st.selectbox("เลือก No. ลำดับที่ต้องการจัดการ", df_show['ลำดับ/No.'].tolist())
+                # ดึงข้อมูลแถวที่เลือก
                 row = df_show[df_show['ลำดับ/No.'] == sel_no].iloc[0]
                 
                 with st.form("edit_full_form"):
                     e_col1, e_col2 = st.columns(2)
-                    n_req = e_col1.text_input("ผู้จอง / Name", row['requester'])
-                    n_dest = e_col1.text_input("ปลายทาง / Destination", row.get('destination', '-'))
                     
+                    # ✅ แก้จุดที่ชื่อรถไม่ขึ้น: ต้องสร้าง List มาตรฐานแล้วหา Index ของค่าเดิมครับ
+                    all_res = ["Civic (ตุ้ม)", "Civic (บอล)", "Camry (เนก)", "MG", "ห้องชั้น 1 (ห้องใหญ่)", "ห้องชั้น 2", "ห้อง VIP", "ห้องชั้นลอย", "ห้อง Production"]
+                    try: 
+                        res_idx = all_res.index(row['resource'])
+                    except: 
+                        res_idx = 0 # ถ้าหาไม่เจอให้ไปที่ตัวแรก
+                    
+                    n_res = e_col1.selectbox("รายการ / Resource", all_res, index=res_idx)
+                    n_req = e_col1.text_input("ผู้จอง / Name", str(row['requester']))
+                    n_dest = e_col1.text_input("ปลายทาง / Destination", str(row.get('destination', '-')))
+                    
+                    # ✅ ดึงวันที่และเวลาเดิมมาใส่
+                    dt_s = pd.to_datetime(row['start_time'])
                     dt_e = pd.to_datetime(row['end_time'])
+                    
+                    n_d_s = e_col2.date_input("วันที่เริ่ม", dt_s.date())
+                    n_t_s = e_col2.text_input("เวลาเริ่ม (4 หลัก)", dt_s.strftime("%H%M"))
                     n_d_e = e_col2.date_input("วันที่สิ้นสุด", dt_e.date())
                     n_t_e = e_col2.text_input("เวลาสิ้นสุด (4 หลัก)", dt_e.strftime("%H%M"))
                     
-                    n_purp = st.text_area("วัตถุประสงค์ / Purpose", row.get('purpose', '-'))
+                    n_purp = st.text_area("วัตถุประสงค์ / Purpose", str(row.get('purpose', '-')))
                     
                     pw = st.text_input("รหัสผ่าน Admin", type="password")
                     b1, b2 = st.columns(2)
-                    if b1.form_submit_button("💾 บันทึกการเปลี่ยนแปลง", use_container_width=True):
+                    
+                    if b1.form_submit_button("💾 บันทึกการแก้ไข", use_container_width=True):
                         if pw == "s1234":
                             try:
-                                fe = format_time_string(n_t_e)
+                                fs, fe = format_time_string(n_t_s), format_time_string(n_t_e)
+                                f_start = datetime.combine(n_d_s, datetime.strptime(fs, "%H:%M").time()).isoformat()
                                 f_end = datetime.combine(n_d_e, datetime.strptime(fe, "%H:%M").time()).isoformat()
-                                supabase.table("bookings").update({"requester": n_req, "destination": n_dest, "purpose": n_purp, "end_time": f_end}).eq("id", row['id']).execute()
+                                supabase.table("bookings").update({
+                                    "resource": n_res, "requester": n_req, "destination": n_dest, 
+                                    "purpose": n_purp, "start_time": f_start, "end_time": f_end
+                                }).eq("id", row['id']).execute()
                                 st.success("อัปเดตเรียบร้อย!"); st.rerun()
-                            except: st.error("❌ รูปแบบเวลาไม่ถูกต้อง")
-                        else: st.error("รหัสผ่านผิด")
+                            except: st.error("❌ รูปแบบเวลาผิด")
+                        else: st.error("รหัสผ่านไม่ถูกต้อง")
+                    
                     if b2.form_submit_button("🗑️ ลบรายการนี้", use_container_width=True):
                         if pw == "s1234":
                             supabase.table("bookings").delete().eq("id", row['id']).execute(); st.rerun()
-                        else: st.error("รหัสผ่านผิด")
-
+                        else: st.error("รหัสผ่านไม่ถูกต้อง")
 # ==========================================
 # 6. หน้า ADMIN (APPROVAL)
 # ==========================================
