@@ -131,7 +131,7 @@ if choice == "📝 จองใหม่":
         reason = st.text_area("วัตถุประสงค์การใช้งาน")
         
         try:
-            ts_f, te_f = format_time_string(t_start_raw), format_time_string(t_end_raw)
+            ts_f, te_f = format_time_string(t_s_raw.strip()), format_time_string(t_e_raw.strip())
             ts = datetime.combine(d_start, datetime.strptime(ts_f, "%H:%M").time())
             te = datetime.combine(d_end, datetime.strptime(te_f, "%H:%M").time())
         except: ts, te = None, None
