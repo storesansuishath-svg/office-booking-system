@@ -124,10 +124,10 @@ if choice == "📝 จองใหม่":
 
     with col2:
         d_start = st.date_input("วันที่เริ่ม", datetime.now().date())
-        t_start_raw = st.text_input("เวลาเริ่ม (4 หลัก เช่น 0800)", "0800", max_chars=4)
+        t_s_raw = st.text_input("เวลาเริ่ม (เช่น 0800)", value="", placeholder="กรอกเวลา เช่น 0800", max_chars=4)
         st.markdown("---")
         d_end = st.date_input("วันที่สิ้นสุด", d_start, min_value=d_start)
-        t_end_raw = st.text_input("เวลาสิ้นสุด (4 หลัก เช่น 1700)", "1700", max_chars=4)
+        t_e_raw = st.text_input("เวลาสิ้นสุด (เช่น 1700)", value="", placeholder="กรอกเวลา เช่น 1700", max_chars=4)
         reason = st.text_area("วัตถุประสงค์การใช้งาน")
         
         try:
