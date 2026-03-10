@@ -12,6 +12,9 @@ import io
 SUPABASE_URL = "https://qejqynbxdflwebzzwfzu.supabase.co" 
 SUPABASE_KEY = "sb_publishable_hvNQEPvuEAlXfVeCzpy7Ug_kzvihQqq"
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+# เพิ่มต่อจากบรรทัดที่ 14 ครับ
+CURRENT_BOT_ID = "@212djmfz"  # <-- สลับ BOT ตัวใหม่แค่แก้ ID ตรงนี้ครับ!
+LINE_ADD_FRIEND_URL = f"https://line.me/R/ti/p/{CURRENT_BOT_ID}"
 
 st.set_page_config(page_title="ระบบจองรถและห้องประชุม - Sansuisha", layout="wide")
 
