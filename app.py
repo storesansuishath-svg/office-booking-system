@@ -106,11 +106,6 @@ if pending_count > 0:
     st.sidebar.markdown(f'<p class="blink">📢 มีรายการรออนุมัติ: {pending_count}</p>', unsafe_allow_html=True)
 
 st.sidebar.markdown("---")
-
-if pending_count > 0:
-    st.sidebar.markdown(f'<p class="blink">📢 มีรายการรออนุมัติ: {pending_count}</p>', unsafe_allow_html=True)
-
-st.sidebar.markdown("---")
 menu = ["📝 จองใหม่", "📅 ตารางงาน (Real-time)", "🔑 Admin (อนุมัติ)", "📊 รายงานประจำเดือน"]
 choice = st.sidebar.selectbox("เมนูจัดการระบบ", menu)
 
