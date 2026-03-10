@@ -94,7 +94,7 @@ pending_count = len(pending_items)
 st.sidebar.image("https://lh3.googleusercontent.com/d/1zCjSjSbCO-mbsaGoDI6g0G-bfmyVfqFV", use_container_width=True)
 
 st.sidebar.link_button(
-    label="➕ เพิ่มเพื่อน LINE (รับแจ้งเตือน)",
+    label="➕ เพิ่มเพื่อน LINE (ดูคิว/สถานะ)",
     url=LINE_ADD_FRIEND_URL,
     use_container_width=True,
     type="primary"
