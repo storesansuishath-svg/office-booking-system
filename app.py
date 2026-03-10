@@ -28,17 +28,18 @@ st.markdown("""
     .main-title { font-size: 35px; font-weight: bold; color: #1E88E5; text-align: center; margin-bottom: 20px;}
     </style>
 """, unsafe_allow_html=True)
+
 # แทรกต่อจากบรรทัดที่ 27 ครับ
-with st.sidebar:
-    st.image("logo_sansuisha.png") # เช็คชื่อไฟล์โลโก้ของพี่ด้วยนะครับ
+    with st.sidebar:
+        st.image("logo_sansuisha.png") # เช็คชื่อไฟล์โลโก้ของพี่ด้วยนะครับ
     
     # ปุ่มเพิ่มเพื่อน LINE
-    st.link_button(
-        label="➕ เพิ่มเพื่อน LINE (รับแจ้งเตือน)",
-        url=LINE_ADD_FRIEND_URL,
-        use_container_width=True,
-        type="primary"
-    )
+        st.link_button(
+            label="➕ เพิ่มเพื่อน LINE (รับแจ้งเตือน)",
+            url=LINE_ADD_FRIEND_URL,
+            use_container_width=True,
+            type="primary"
+        )
     
     st.markdown(f"<p style='text-align: center; color: gray;'>Line ID: {CURRENT_BOT_ID}</p>", unsafe_allow_html=True)
     st.markdown("---")
