@@ -12,9 +12,6 @@ import io
 SUPABASE_URL = "https://qejqynbxdflwebzzwfzu.supabase.co" 
 SUPABASE_KEY = "sb_publishable_hvNQEPvuEAlXfVeCzpy7Ug_kzvihQqq"
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
-# เพิ่มต่อจากบรรทัดที่ 14 ครับ
-CURRENT_BOT_ID = "@212djmfz"  # <-- สลับ BOT ตัวใหม่แค่แก้ ID ตรงนี้ครับ!
-LINE_ADD_FRIEND_URL = f"https://line.me/R/ti/p/{CURRENT_BOT_ID}"
 
 st.set_page_config(page_title="ระบบจองรถและห้องประชุม - Sansuisha", layout="wide")
 
@@ -28,21 +25,6 @@ st.markdown("""
     .main-title { font-size: 35px; font-weight: bold; color: #1E88E5; text-align: center; margin-bottom: 20px;}
     </style>
 """, unsafe_allow_html=True)
-
-# แทรกต่อจากบรรทัดที่ 27 ครับ
-    with st.sidebar:
-        st.image("logo_sansuisha.png") # เช็คชื่อไฟล์โลโก้ของพี่ด้วยนะครับ
-    
-    # ปุ่มเพิ่มเพื่อน LINE
-        st.link_button(
-            label="➕ เพิ่มเพื่อน LINE (รับแจ้งเตือน)",
-            url=LINE_ADD_FRIEND_URL,
-            use_container_width=True,
-            type="primary"
-        )
-    
-    st.markdown(f"<p style='text-align: center; color: gray;'>Line ID: {CURRENT_BOT_ID}</p>", unsafe_allow_html=True)
-    st.markdown("---")
 
 # ==========================================
 # 2. ฟังก์ชันหลัก (CORE FUNCTIONS)
