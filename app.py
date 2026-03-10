@@ -91,6 +91,8 @@ auto_delete_old_bookings()
 pending_items = supabase.table("bookings").select("id").eq("status", "Pending").execute().data
 pending_count = len(pending_items)
 
+st.sidebar.image("https://lh3.googleusercontent.com/d/1zCjSjSbCO-mbsaGoDI6g0G-bfmyVfqFV", use_container_width=True)
+
 st.sidebar.link_button(
     label="➕ เพิ่มเพื่อน LINE (รับแจ้งเตือน)",
     url=LINE_ADD_FRIEND_URL,
@@ -104,8 +106,6 @@ if pending_count > 0:
     st.sidebar.markdown(f'<p class="blink">📢 มีรายการรออนุมัติ: {pending_count}</p>', unsafe_allow_html=True)
 
 st.sidebar.markdown("---")
-
-st.sidebar.image("https://lh3.googleusercontent.com/d/1zCjSjSbCO-mbsaGoDI6g0G-bfmyVfqFV", use_container_width=True)
 
 if pending_count > 0:
     st.sidebar.markdown(f'<p class="blink">📢 มีรายการรออนุมัติ: {pending_count}</p>', unsafe_allow_html=True)
