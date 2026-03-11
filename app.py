@@ -22,16 +22,6 @@ st.markdown("""
     <style>
     @keyframes blinker { 50% { opacity: 0; } }
     .blink { animation: blinker 1s linear infinite; color: #FF0000; font-weight: bold; font-size: 18px; }
-    /* --- ก๊อปส่วนนี้ไปแทรกระหว่าง <style> ... </style> ครับ --- */
-
-    [data-testid="stSidebar"] button[kind="primary"] {
-    background-color: #06C755 !important;
-    color: white !important;
-    }
-
-    [data-testid="stSidebar"] button[kind="primary"]:hover {
-    background-color: #05a346 !important; /* สีตอนเมาส์ชี้จะเข้มขึ้นนิดนึง */
-    }
     .stTextInput input, .stTextArea textarea, .stSelectbox div[data-baseweb="select"] {
         background-color: #E3F2FD !important; color: #0D47A1 !important; border: 1px solid #BBDEFB !important;
     }
