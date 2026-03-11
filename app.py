@@ -21,7 +21,7 @@ st.set_page_config(page_title="ระบบจองรถและห้อง�
 st.markdown("""
     <style>
     @keyframes blinker { 50% { opacity: 0; } }
-    .blink { animation: blinker 1s linear infinite; color: #FF0000; font-weight: bold; font-size: 18px; }
+    .blink { animation: blinker 1s linear infinite; color: #06C755; font-weight: bold; font-size: 18px; }
     .stTextInput input, .stTextArea textarea, .stSelectbox div[data-baseweb="select"] {
         background-color: #E3F2FD !important; color: #0D47A1 !important; border: 1px solid #BBDEFB !important;
     }
