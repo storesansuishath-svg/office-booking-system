@@ -2,326 +2,347 @@ import streamlit as st
 import pandas as pd
 from supabase import create_client
 from datetime import datetime, timedelta
-import plotly.express as px
 import requests
+import json
 import io
 
-# -----------------------------
-# CONFIG
-# -----------------------------
-
-SUPABASE_URL = "https://qejqynbxdflwebzzwfzu.supabase.co"
-SUPABASE_KEY = "YOUR_KEY"
-
+# ==========================================
+# 1. การเชื่อมต่อ DATABASE & CONFIG
+# ==========================================
+SUPABASE_URL = "https://qejqynbxdflwebzzwfzu.supabase.co" 
+SUPABASE_KEY = "sb_publishable_hvNQEPvuEAlXfVeCzpy7Ug_kzvihQqq"
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-CURRENT_BOT_ID = "@212djmfz"
+CURRENT_BOT_ID = "@851jrsed"  
 LINE_ADD_FRIEND_URL = f"https://line.me/R/ti/p/{CURRENT_BOT_ID}"
 
-st.set_page_config(page_title="ระบบจองรถและห้องประชุม", layout="wide")
+st.set_page_config(page_title="ระบบจองรถและห้องประชุม - Sansuisha", layout="wide")
 
-# -----------------------------
-# STYLE
-# -----------------------------
-
+st.markdown("""
+    <style>
+    @keyframes blinker { 50% { opacity: 0; } }
+    .blink { animation: blinker 1s linear infinite; color: #FF0000; font-weight: bold; font-size: 18px; }
+    .stTextInput input, .stTextArea textarea, .stSelectbox div[data-baseweb="select"] {
+        background-color: #E3F2FD !important; color: #0D47A1 !important; border: 1px solid #BBDEFB !important;
+    }
+    .main-title { font-size: 35px; font-weight: bold; color: #1E88E5; text-align: center; margin-bottom: 20px;}
+    </style>
+""", unsafe_allow_html=True)
 st.markdown("""
 <style>
 
-.main-title {
-font-size:34px;
-font-weight:bold;
-color:#1E88E5;
-text-align:center;
+/* ปุ่ม link_button ใน sidebar */
+[data-testid="stLinkButton"] a {
+    background-color: #8BC34A !important;
+    color: white !important;
+    border-radius: 8px !important;
+    font-weight: bold !important;
+    border: none !important;
+    text-align: center !important;
 }
 
-.line-btn {
-background-color:#06C755;
-padding:10px;
-border-radius:8px;
-text-align:center;
+/* hover */
+[data-testid="stLinkButton"] a:hover {
+    background-color: #4CAF50 !important;
 }
 
-.line-btn a{
-color:white;
-font-weight:bold;
-text-decoration:none;
+/* click */
+[data-testid="stLinkButton"] a:active {
+    background-color: #2E7D32 !important;
 }
 
 </style>
 """, unsafe_allow_html=True)
 
-# -----------------------------
-# FUNCTION
-# -----------------------------
+# ==========================================
+# 2. ฟังก์ชันหลัก (CORE FUNCTIONS)
+# ==========================================
 
-def validate_time(t):
+def format_time_string(t_raw):
+    clean = str(t_raw).replace(":", "").strip()
+    if len(clean) == 4:
+        return f"{clean[:2]}:{clean[2:]}"
+    return clean
 
-    if len(t) != 4 or not t.isdigit():
-        return False
+def check_booking_conflict(resource, start_time_iso, end_time_iso):
+    res = supabase.table("bookings").select("*").eq("resource", resource).eq("status", "Approved").execute()
+    new_s = datetime.fromisoformat(start_time_iso).replace(tzinfo=None)
+    new_e = datetime.fromisoformat(end_time_iso).replace(tzinfo=None)
+    for item in res.data:
+        ex_s = pd.to_datetime(item['start_time']).replace(tzinfo=None)
+        ex_e = pd.to_datetime(item['end_time']).replace(tzinfo=None)
+        if new_s < ex_e and new_e > ex_s:
+            return True, item['requester']
+    return False, None
 
-    hh = int(t[:2])
-    mm = int(t[2:])
+def send_line_notification(booking_id, resource, name, dept, t_start, t_end, purpose, destination, status_text="Pending"):
+    render_url = "https://line-booking-system.onrender.com/notify"
+    GROUP_ID = "Cad74a32468ca40051bd7071a6064660d" 
+    
+    try:
+        s_dt = pd.to_datetime(t_start)
+        s_str = s_dt.strftime("%d/%m/%Y %H:%M")
+        e_str = t_end if isinstance(t_end, str) else pd.to_datetime(t_end).strftime("%H:%M")
 
-    return 0 <= hh <= 23 and 0 <= mm <= 59
-
-
-def format_time(t):
-
-    return f"{t[:2]}:{t[2:]}"
-
-
-def check_conflict(resource, start, end):
-
-    res = supabase.table("bookings").select("*")\
-        .eq("resource", resource)\
-        .in_("status", ["Approved","Pending"])\
-        .execute()
-
-    s = datetime.fromisoformat(start)
-    e = datetime.fromisoformat(end)
-
-    for r in res.data:
-
-        es = pd.to_datetime(r['start_time'])
-        ee = pd.to_datetime(r['end_time'])
-
-        if s < ee and e > es:
-            return True
-
-    return False
-
-
-# -----------------------------
-# SIDEBAR
-# -----------------------------
-
-st.sidebar.markdown(
-f"""
-<div class="line-btn">
-<a href="{LINE_ADD_FRIEND_URL}" target="_blank">
-➕ เพิ่มเพื่อน LINE
-</a>
-</div>
-""",
-unsafe_allow_html=True
-)
-
-menu = st.sidebar.selectbox(
-"เมนูระบบ",
-[
-"Dashboard",
-"จองใหม่",
-"ตารางงาน",
-"Admin",
-"รายงาน"
-]
-)
-
-# -----------------------------
-# DASHBOARD
-# -----------------------------
-
-if menu == "Dashboard":
-
-    st.markdown('<div class="main-title">Dashboard การใช้งาน</div>', unsafe_allow_html=True)
-
-    data = supabase.table("bookings").select("*").eq("status","Approved").execute().data
-
-    if data:
-
-        df = pd.DataFrame(data)
-
-        car_df = df[df['resource'].str.contains("Civic|Camry|MG", na=False)]
-        room_df = df[df['resource'].str.contains("ห้อง", na=False)]
-
-        c1,c2 = st.columns(2)
-
-        if not car_df.empty:
-
-            car = car_df['resource'].value_counts().reset_index()
-            car.columns = ['รถ','จำนวน']
-
-            fig = px.bar(car,x='รถ',y='จำนวน',title="การใช้รถ")
-
-            c1.plotly_chart(fig,use_container_width=True)
-
-        if not room_df.empty:
-
-            room = room_df['resource'].value_counts().reset_index()
-            room.columns = ['ห้อง','จำนวน']
-
-            fig = px.bar(room,x='ห้อง',y='จำนวน',title="การใช้ห้อง")
-
-            c2.plotly_chart(fig,use_container_width=True)
-
-# -----------------------------
-# BOOKING
-# -----------------------------
-
-if menu == "จองใหม่":
-
-    st.markdown('<div class="main-title">จองรถ / ห้องประชุม</div>', unsafe_allow_html=True)
-
-    col1,col2 = st.columns(2)
-
-    with col1:
-
-        cat = st.radio("ประเภท",["รถยนต์","ห้องประชุม"])
-
-        if cat=="รถยนต์":
-            resources=[
-            "Civic (ตุ้ม)",
-            "Civic (บอล)",
-            "Camry (เนก)",
-            "MG",
-            "MG (เนก)"
-            ]
+        payload = {
+            "id": booking_id, "target_id": GROUP_ID, "resource": resource, 
+            "name": name, "dept": dept, "date": s_str, "end_date": e_str, 
+            "purpose": purpose, "destination": destination, "status": status_text
+        }
+        
+        # [FIX] ขยายเวลา Timeout เป็น 30 วินาที 
+        r = requests.post(render_url, json=payload, timeout=30)
+        
+        if r.status_code == 200:
+            st.toast(f"🔔 แจ้งเตือน {status_text} ผ่าน LINE สำเร็จ", icon="✅")
+        elif r.status_code == 429:
+            st.error("⚠️ โควตา LINE รายเดือนเต็มแล้ว (Error 429)")
         else:
-            resources=[
-            "ห้องชั้น 1",
-            "ห้องชั้น 2",
-            "ห้อง VIP",
-            "ห้องชั้นลอย",
-            "ห้อง Production"
-            ]
+            st.warning(f"⚠️ ส่งแจ้งเตือนไม่ได้: Status Code {r.status_code}")
+    except requests.exceptions.Timeout:
+        st.error("📡 เชื่อมต่อเซิร์ฟเวอร์แจ้งเตือนไม่ได้: หมดเวลารอ (Timeout) กรุณาลองใหม่")
+    except Exception as e:
+        st.error(f"📡 เกิดข้อผิดพลาดในการแจ้งเตือน: {e}")
 
-        resource = st.selectbox("รายการ",resources)
+def auto_delete_old_bookings():
+    threshold = (datetime.now() - timedelta(days=45)).isoformat()
+    try: supabase.table("bookings").delete().lt("end_time", threshold).execute()
+    except: pass
 
+# ==========================================
+# 3. SIDEBAR & NAVIGATION
+# ==========================================
+auto_delete_old_bookings()
+pending_items = supabase.table("bookings").select("id").eq("status", "Pending").execute().data
+pending_count = len(pending_items)
+
+st.sidebar.image("https://lh3.googleusercontent.com/d/1zCjSjSbCO-mbsaGoDI6g0G-bfmyVfqFV", use_container_width=True)
+
+st.sidebar.link_button(
+    label="➕ เพิ่มเพื่อน LINE (ดูคิว/สถานะ)",
+    url=LINE_ADD_FRIEND_URL,
+    use_container_width=True,
+    type="primary"
+)
+st.sidebar.markdown(f"<p style='text-align: center; color: gray; font-size: 12px;'>Line ID: {CURRENT_BOT_ID}</p>", unsafe_allow_html=True)
+# ---------------------------------------
+
+if pending_count > 0:
+    st.sidebar.markdown(f'<p class="blink">📢 มีรายการรออนุมัติ: {pending_count}</p>', unsafe_allow_html=True)
+
+st.sidebar.markdown("---")
+menu = ["📝 จองใหม่", "📅 ตารางงาน (Real-time)", "🔑 Admin (อนุมัติ)", "📊 รายงานประจำเดือน"]
+choice = st.sidebar.selectbox("เมนูจัดการระบบ", menu)
+
+# ==========================================
+# 4. หน้าจองใหม่ (BOOKING)
+# ==========================================
+if choice == "📝 จองใหม่":
+    st.markdown('<div class="main-title">ระบบจองรถยนต์และห้องประชุม Online</div>', unsafe_allow_html=True)
+    
+    t_start_day = datetime.now().replace(hour=0, minute=0, second=0).isoformat()
+    today_approved = supabase.table("bookings").select("id").eq("status", "Approved").gte("start_time", t_start_day).execute().data
+    
+    d1, d2, d3 = st.columns(3)
+    d1.metric("รายการจองวันนี้", f"{len(today_approved)} รายการ")
+    d2.metric("รอพี่อนุมัติ", f"{pending_count} รายการ")
+    d3.metric("สถานะฐานข้อมูล", "Connected")
+    st.markdown("---")
+
+    col1, col2 = st.columns(2)
+    with col1:
+        cat = st.radio("ประเภททรัพยากร", ["รถยนต์", "ห้องประชุม"], horizontal=True)
+        res_list = ["Civic (ตุ้ม)", "Civic (บอล)", "Camry (เนก)", "MG", "MG (เนก)"] if cat == "รถยนต์" else ["ห้องชั้น 1 (ห้องใหญ่)", "ห้องชั้น 2", "ห้อง VIP", "ห้องชั้นลอย", "ห้อง Production"]
+        res = st.selectbox("เลือกรายการ", res_list)
+        dest = st.text_input("สถานที่ปลายทาง") if cat == "รถยนต์" else "Office"
         name = st.text_input("ชื่อผู้จอง")
+        phone = st.text_input("เบอร์โทรศัพท์")
         dept = st.text_input("แผนก")
 
-        phone = st.text_input("เบอร์โทร")
-
     with col2:
+        d_start = st.date_input("วันที่เริ่ม", datetime.now().date())
+        t_s_raw = st.text_input("เวลาเริ่ม (เช่น 0800)", value="", placeholder="กรอกเวลา เช่น 0800", max_chars=4)
+        st.markdown("---")
+        d_end = st.date_input("วันที่สิ้นสุด", d_start, min_value=d_start)
+        t_e_raw = st.text_input("เวลาสิ้นสุด (เช่น 1700)", value="", placeholder="กรอกเวลา เช่น 1700", max_chars=4)
+        reason = st.text_area("วัตถุประสงค์การใช้งาน")
+        
+        try:
+            ts_f, te_f = format_time_string(t_s_raw.strip()), format_time_string(t_e_raw.strip())
+            ts = datetime.combine(d_start, datetime.strptime(ts_f, "%H:%M").time())
+            te = datetime.combine(d_end, datetime.strptime(te_f, "%H:%M").time())
+        except: ts, te = None, None
 
-        date_start = st.date_input("วันที่เริ่ม")
-
-        t_start = st.text_input("เวลาเริ่ม เช่น 0800")
-
-        date_end = st.date_input("วันที่สิ้นสุด")
-
-        t_end = st.text_input("เวลาสิ้นสุด เช่น 1700")
-
-        purpose = st.text_area("วัตถุประสงค์")
-
-    if st.button("ส่งคำขอจอง"):
-
-        if not validate_time(t_start) or not validate_time(t_end):
-
-            st.error("รูปแบบเวลาไม่ถูกต้อง")
-
+    if st.button("ยืนยันการส่งคำขอจอง", use_container_width=True):
+        if not name or not dept or ts is None:
+            st.warning("⚠️ กรุณากรอกข้อมูลให้ครบถ้วน")
+        elif ts >= te:
+            st.error("❌ เวลาเริ่มต้องมาก่อนเวลาสิ้นสุด")
         else:
-
-            ts = datetime.combine(
-            date_start,
-            datetime.strptime(format_time(t_start),"%H:%M").time()
-            )
-
-            te = datetime.combine(
-            date_end,
-            datetime.strptime(format_time(t_end),"%H:%M").time()
-            )
-
-            if check_conflict(resource, ts.isoformat(), te.isoformat()):
-
-                st.error("เวลาชนกับรายการอื่น")
-
+            is_conf, user_conf = check_booking_conflict(res, ts.isoformat(), te.isoformat())
+            if is_conf:
+                st.error(f"❌ คิวชนกัน! {res} ถูกจองแล้วโดยคุณ {user_conf} ในเวลานี้")
             else:
+                data = {"resource": res, "requester": name, "phone": phone, "dept": dept, "start_time": ts.isoformat(), "end_time": te.isoformat(), "purpose": reason, "destination": dest, "status": "Pending"}
+                resp = supabase.table("bookings").insert(data).execute()
+                if resp.data:
+                    send_line_notification(resp.data[0]['id'], res, name, dept, ts, te, reason, dest)
+                    st.success("✅ ส่งคำขอเรียบร้อย! โปรดรอ Admin อนุมัติ")
+                    st.balloons()
 
-                supabase.table("bookings").insert({
+# ==========================================
+# 5. หน้าตารางงาน (คอลัมน์เต็ม 100% ตามต้นฉบับ)
+# ==========================================
+elif choice == "📅 ตารางงาน (Real-time)":
+    st.subheader("📅 ตารางการใช้งานปัจจุบันและล่วงหน้า")
+    
+    f_c1, f_c2 = st.columns([2, 1])
+    search_q = f_c1.text_input("🔍 ค้นหาชื่อผู้จอง / สถานที่")
+    view_cat = f_c2.selectbox("กรองตามประเภท", ["ทั้งหมด", "รถยนต์", "ห้องประชุม"])
+    
+    now_iso = datetime.now().isoformat()
+    db_res = supabase.table("bookings").select("*").eq("status", "Approved").gt("end_time", now_iso).order("start_time").execute()
+    df = pd.DataFrame(db_res.data)
+    
+    if df.empty:
+        st.info("ขณะนี้ไม่มีรายการจอง")
+    else:
+        if view_cat == "รถยนต์": df = df[df['resource'].str.contains("Civic|Camry|MG", na=False)]
+        elif view_cat == "ห้องประชุม": df = df[df['resource'].str.contains("ห้อง", na=False)]
+        if search_q: df = df[df['requester'].str.contains(search_q, case=False) | df['destination'].str.contains(search_q, case=False)]
+        
+        if not df.empty:
+            df_show = df.copy().reset_index(drop=True)
+            df_show.index += 1
+            df_show.insert(0, 'ลำดับ/No.', df_show.index)
+            
+            # [FIX] คืนชีพรูปแบบเวลาและคอลัมน์เต็มสูบ
+            df_show['start_fmt'] = pd.to_datetime(df_show['start_time'], errors='coerce').dt.strftime('%d/%m/%Y %H:%M')
+            df_show['end_fmt'] = pd.to_datetime(df_show['end_time'], errors='coerce').dt.strftime('%d/%m/%Y %H:%M')
+            
+            df_disp = df_show[['ลำดับ/No.', 'resource', 'start_fmt', 'end_fmt', 'requester', 'purpose', 'destination']]
+            df_disp.columns = ['ลำดับ / No.', 'รายการ / Resource', 'เวลาเริ่ม / Start Time', 'เวลาสิ้นสุด / End Time', 'ผู้จอง / Name', 'วัตถุประสงค์ / Purpose', 'ปลายทาง / Destination']
+            st.dataframe(df_disp, use_container_width=True)
 
-                "resource":resource,
-                "requester":name,
-                "dept":dept,
-                "phone":phone,
-                "start_time":ts.isoformat(),
-                "end_time":te.isoformat(),
-                "purpose":purpose,
-                "status":"Pending"
+            # ส่วนแก้ไขข้อมูล (Full Form)
+            st.markdown("---")
+            # --- [จุดแก้ไข: ส่วนดึงข้อมูลมาแสดงในฟอร์ม] ---
+            with st.expander("🛠️ จัดการข้อมูล (แก้ไข/ลบ โดย Admin)"):
+                sel_no = st.selectbox("เลือก No. ลำดับที่ต้องการจัดการ", df_show['ลำดับ/No.'].tolist())
+                # ดึงข้อมูลแถวที่เลือก
+                row = df_show[df_show['ลำดับ/No.'] == sel_no].iloc[0]
+                
+                with st.form("edit_full_form"):
+                    e_col1, e_col2 = st.columns(2)
+                    
+                    # ✅ แก้จุดที่ชื่อรถไม่ขึ้น: ต้องสร้าง List มาตรฐานแล้วหา Index ของค่าเดิมครับ
+                    all_res = ["Civic (ตุ้ม)", "Civic (บอล)", "Camry (เนก)", "MG", "MG (เนก)", "ห้องชั้น 1 (ห้องใหญ่)", "ห้องชั้น 2", "ห้อง VIP", "ห้องชั้นลอย", "ห้อง Production"]
+                    try: 
+                        res_idx = all_res.index(row['resource'])
+                    except: 
+                        res_idx = 0 # ถ้าหาไม่เจอให้ไปที่ตัวแรก
+                    
+                    n_res = e_col1.selectbox("รายการ / Resource", all_res, index=res_idx)
+                    n_req = e_col1.text_input("ผู้จอง / Name", str(row['requester']))
+                    n_dest = e_col1.text_input("ปลายทาง / Destination", str(row.get('destination', '-')))
+                    
+                    # ✅ ดึงวันที่และเวลาเดิมมาใส่
+                    dt_s = pd.to_datetime(row['start_time'])
+                    dt_e = pd.to_datetime(row['end_time'])
+                    
+                    n_d_s = e_col2.date_input("วันที่เริ่ม", dt_s.date())
+                    n_t_s = e_col2.text_input("เวลาเริ่ม (4 หลัก)", dt_s.strftime("%H%M"))
+                    n_d_e = e_col2.date_input("วันที่สิ้นสุด", dt_e.date())
+                    n_t_e = e_col2.text_input("เวลาสิ้นสุด (4 หลัก)", dt_e.strftime("%H%M"))
+                    
+                    n_purp = st.text_area("วัตถุประสงค์ / Purpose", str(row.get('purpose', '-')))
+                    
+                    pw = st.text_input("รหัสผ่าน Admin", type="password")
+                    b1, b2 = st.columns(2)
+                    
+                    if b1.form_submit_button("💾 บันทึกการแก้ไข", use_container_width=True):
+                        if pw == "s1234":
+                            try:
+                                fs, fe = format_time_string(n_t_s), format_time_string(n_t_e)
+                                f_start = datetime.combine(n_d_s, datetime.strptime(fs, "%H:%M").time()).isoformat()
+                                f_end = datetime.combine(n_d_e, datetime.strptime(fe, "%H:%M").time()).isoformat()
+                                supabase.table("bookings").update({
+                                    "resource": n_res, "requester": n_req, "destination": n_dest, 
+                                    "purpose": n_purp, "start_time": f_start, "end_time": f_end
+                                }).eq("id", row['id']).execute()
+                                st.success("อัปเดตเรียบร้อย!"); st.rerun()
+                            except: st.error("❌ รูปแบบเวลาผิด")
+                        else: st.error("รหัสผ่านไม่ถูกต้อง")
+                    
+                    if b2.form_submit_button("🗑️ ลบรายการนี้", use_container_width=True):
+                        if pw == "s1234":
+                            supabase.table("bookings").delete().eq("id", row['id']).execute(); st.rerun()
+                        else: st.error("รหัสผ่านไม่ถูกต้อง")
+# ==========================================
+# 6. หน้า ADMIN (APPROVAL)
+# ==========================================
+elif choice == "🔑 Admin (อนุมัติ)":
+    st.subheader("🔑 ระบบจัดการคำขอ")
+    if st.text_input("กรอกรหัสผ่านเพื่ออนุมัติ", type="password") == "s1234":
+        items = supabase.table("bookings").select("*").eq("status", "Pending").order("id").execute().data
+        if not items: st.info("ไม่มีรายการรออนุมัติ")
+        else:
+            for item in items:
+                with st.container(border=True):
+                    c1, c2 = st.columns([4, 1])
+                    curr_start = pd.to_datetime(item['start_time'])
+                    with c1:
+                        st.write(f"🚗 **{item['resource']}** | 👤 {item['requester']}")
+                        st.write(f"📍 {item.get('destination','-')} | 🎯 {item.get('purpose','-')}")
+                        a_d = st.date_input("ยืนยันวันที่", curr_start.date(), key=f"d_{item['id']}")
+                        a_t = st.text_input("ยืนยันเวลาเริ่ม (4 หลัก)", curr_start.strftime("%H%M"), key=f"t_{item['id']}")
+                    
+                    if c2.button("อนุมัติ ✅", key=f"ap_{item['id']}", use_container_width=True):
+                        # [FIX] แยกระบบแปลงเวลาออกจากการส่ง LINE ป้องกันบั๊กซ้อนบั๊ก
+                        try:
+                            f_time = format_time_string(a_t)
+                            final_start = datetime.combine(a_d, datetime.strptime(f_time, "%H:%M").time()).isoformat()
+                        except Exception as e:
+                            st.error(f"❌ รูปแบบเวลาผิด: {e}")
+                            st.stop() # หยุดการทำงานถ้าเวลาผิด
 
-                }).execute()
+                        # 1. บันทึกลง Supabase ก่อน (ชัวร์สุด)
+                        supabase.table("bookings").update({"status": "Approved", "start_time": final_start}).eq("id", item['id']).execute()
+                        st.success("✅ บันทึกการอนุมัติลงระบบเรียบร้อยแล้ว!")
+                        
+                        # 2. พยายามส่ง LINE (ถ้าพัง ระบบก็ยังอนุมัติผ่าน)
+                        send_line_notification(item['id'], item['resource'], item['requester'], item['dept'], final_start, item['end_time'], item['purpose'], item.get('destination','-'), "Approved")
+                        
+                        st.rerun()
+                        
+                    if c2.button("ลบ 🗑️", key=f"dl_{item['id']}", use_container_width=True):
+                        supabase.table("bookings").delete().eq("id", item['id']).execute(); st.rerun()
 
-                st.success("ส่งคำขอเรียบร้อย")
-
-# -----------------------------
-# ตารางงาน
-# -----------------------------
-
-if menu == "ตารางงาน":
-
-    data = supabase.table("bookings").select("*")\
-    .eq("status","Approved")\
-    .order("start_time")\
-    .execute().data
-
-    if data:
-
-        df = pd.DataFrame(data)
-
-        df['start'] = pd.to_datetime(df['start_time']).dt.strftime('%d/%m/%Y %H:%M')
-
-        df['end'] = pd.to_datetime(df['end_time']).dt.strftime('%d/%m/%Y %H:%M')
-
-        show = df[['resource','start','end','requester','purpose']]
-
-        st.dataframe(show,use_container_width=True)
-
-# -----------------------------
-# ADMIN
-# -----------------------------
-
-if menu == "Admin":
-
-    if st.text_input("รหัสผ่าน", type="password") == "s1234":
-
-        data = supabase.table("bookings").select("*")\
-        .eq("status","Pending")\
-        .execute().data
-
-        for r in data:
-
-            st.write(r['resource'], r['requester'])
-
-            if st.button(f"อนุมัติ {r['id']}"):
-
-                supabase.table("bookings").update({
-                "status":"Approved"
-                }).eq("id",r['id']).execute()
-
-                st.success("อนุมัติแล้ว")
-
-# -----------------------------
-# REPORT
-# -----------------------------
-
-if menu == "รายงาน":
-
-    data = supabase.table("bookings").select("*")\
-    .eq("status","Approved")\
-    .execute().data
-
-    if data:
-
-        df = pd.DataFrame(data)
-
-        df['start'] = pd.to_datetime(df['start_time'])
-
-        df['month'] = df['start'].dt.strftime('%m/%Y')
-
-        m = st.selectbox("เดือน", df['month'].unique())
-
-        rep = df[df['month']==m]
-
-        st.dataframe(rep)
-
-        buf = io.BytesIO()
-
-        with pd.ExcelWriter(buf, engine='xlsxwriter') as writer:
-
-            rep.to_excel(writer,index=False)
-
-        st.download_button(
-        "ดาวน์โหลด Excel",
-        buf.getvalue(),
-        "report.xlsx"
-        )
+# ==========================================
+# 7. หน้ารายงาน (REPORT & EXCEL FIX)
+# ==========================================
+elif choice == "📊 รายงานประจำเดือน":
+    st.subheader("📊 รายงานสรุปการใช้ทรัพยากร")
+    if st.text_input("รหัสผ่านรายงาน", type="password") == "s1234":
+        data = supabase.table("bookings").select("*").eq("status", "Approved").execute().data
+        if data:
+            df_rep = pd.DataFrame(data)
+            df_rep['start_time'] = pd.to_datetime(df_rep['start_time'])
+            df_rep['Month-Year'] = df_rep['start_time'].dt.strftime('%m/%Y')
+            
+            c1, c2 = st.columns(2)
+            sel_m = c1.selectbox("เลือกเดือน", sorted(df_rep['Month-Year'].unique(), reverse=True))
+            rep_type = st.selectbox("ประเภทรายงาน", ["ทั้งหมด", "รถยนต์", "ห้องประชุม"])
+            
+            f_df = df_rep[df_rep['Month-Year'] == sel_m].copy()
+            if rep_type == "รถยนต์": f_df = f_df[f_df['resource'].str.contains("Civic|Camry|MG", na=False)]
+            elif rep_type == "ห้องประชุม": f_df = f_df[f_df['resource'].str.contains("ห้อง", na=False)]
+            
+            f_df['เวลาเริ่ม'] = f_df['start_time'].dt.strftime('%d/%m/%Y %H:%M')
+            out_df = f_df[['resource', 'requester', 'dept', 'เวลาเริ่ม', 'destination', 'purpose']]
+            st.dataframe(out_df, use_container_width=True)
+            
+            buf = io.BytesIO()
+            with pd.ExcelWriter(buf, engine='xlsxwriter') as w:
+                out_df.to_excel(w, index=False)
+            st.download_button("📥 ดาวน์โหลดรายงาน (Excel)", buf.getvalue(), f"Report_{rep_type}_{sel_m}.xlsx")
