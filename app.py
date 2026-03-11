@@ -26,6 +26,22 @@ st.markdown("""
         background-color: #E3F2FD !important; color: #0D47A1 !important; border: 1px solid #BBDEFB !important;
     }
     .main-title { font-size: 35px; font-weight: bold; color: #1E88E5; text-align: center; margin-bottom: 20px;}
+    /* เพิ่มส่วนนี้เข้าไป */
+    a[data-testid="stLinkButton"] {
+        background-color: #8BC34A !important;
+        color: white !important;
+        border-radius: 8px !important;
+        font-weight: bold !important;
+        border: none !important;
+    }
+
+    a[data-testid="stLinkButton"]:hover {
+        background-color: #4CAF50 !important;
+    }
+
+    a[data-testid="stLinkButton"]:active {
+        background-color: #2E7D32 !important;
+    }
     </style>
 """, unsafe_allow_html=True)
 
