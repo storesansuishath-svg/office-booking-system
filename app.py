@@ -23,7 +23,7 @@ st.markdown("""
     @keyframes blinker { 50% { opacity: 0; } }
     .blink { animation: blinker 1s linear infinite; color: #FF0000; font-weight: bold; font-size: 18px; }
     .stTextInput input, .stTextArea textarea, .stSelectbox div[data-baseweb="select"] {
-        background-color: #06C755 !important; color: #0D47A1 !important; border: 1px solid #BBDEFB !important;
+        background-color: #E3F2FD !important; color: #0D47A1 !important; border: 1px solid #BBDEFB !important;
     }
     .main-title { font-size: 35px; font-weight: bold; color: #1E88E5; text-align: center; margin-bottom: 20px;}
     </style>
