@@ -65,16 +65,28 @@ def format_time_string(t_raw):
     return clean
 
 def check_booking_conflict(resource, start_time_iso, end_time_iso):
-    res = supabase.table("bookings").select("*").eq("resource", resource).eq("status", "Approved").execute()
+    # แก้ไข: เปลี่ยนจาก .eq("status", "Approved") เป็น .in_("status", ["Approved", "Pending"])
+    # เพื่อให้ระบบตรวจสอบทั้งคิวที่คอนเฟิร์มแล้ว และคิวที่กำลังรอพิจารณาอยู่
+    res = supabase.table("bookings") \
+        .select("*") \
+        .eq("resource", resource) \
+        .in_("status", ["Approved", "Pending"]) \
+        .execute()
+    
     new_s = datetime.fromisoformat(start_time_iso).replace(tzinfo=None)
     new_e = datetime.fromisoformat(end_time_iso).replace(tzinfo=None)
+    
     for item in res.data:
         ex_s = pd.to_datetime(item['start_time']).replace(tzinfo=None)
         ex_e = pd.to_datetime(item['end_time']).replace(tzinfo=None)
+        
+        # ตรวจสอบช่วงเวลาที่ซ้อนทับกัน (Overlap logic)
         if new_s < ex_e and new_e > ex_s:
-            return True, item['requester']
-    return False, None
-
+            # คืนค่าสถานะกลับไปด้วยว่าชนกับใคร และสถานะอะไร (เผื่ออยากเอาไปโชว์)
+            return True, item['requester'], item['status']
+            
+    return False, None, None
+    
 def send_line_notification(booking_id, resource, name, dept, t_start, t_end, purpose, destination, status_text="Pending"):
     render_url = "https://line-booking-system.onrender.com/notify"
     GROUP_ID = "Cad74a32468ca40051bd7071a6064660d" 
@@ -179,10 +191,14 @@ if choice == "📝 จองใหม่":
         elif ts >= te:
             st.error("❌ เวลาเริ่มต้องมาก่อนเวลาสิ้นสุด")
         else:
-            is_conf, user_conf = check_booking_conflict(res, ts.isoformat(), te.isoformat())
+            # รับค่า 3 ตัวแปร (เพิ่ม status_conf)
+            is_conf, user_conf, status_conf = check_booking_conflict(res, ts.isoformat(), te.isoformat())
+            
             if is_conf:
-                st.error(f"❌ คิวชนกัน! {res} ถูกจองแล้วโดยคุณ {user_conf} ในเวลานี้")
+                msg = "ถูกจองแล้ว" if status_conf == "Approved" else "มีคนกำลังรออนุมัติ"
+                st.error(f"❌ คิวชนกัน! {res} {msg} โดยคุณ {user_conf} ในเวลานี้")
             else:
+                # ... (โค้ด Insert ข้อมูลเดิมของคุณ) ...
                 data = {"resource": res, "requester": name, "phone": phone, "dept": dept, "start_time": ts.isoformat(), "end_time": te.isoformat(), "purpose": reason, "destination": dest, "status": "Pending"}
                 resp = supabase.table("bookings").insert(data).execute()
                 if resp.data:
