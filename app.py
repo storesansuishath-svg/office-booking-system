@@ -172,7 +172,7 @@ if choice == "📝 จองใหม่":
         dept = st.text_input("แผนก")
 
     with col2:
-        d_start = st.date_input("วันที่เริ่ม", datetime.now().date())
+        d_start = st.date_input("วันที่เริ่ม", datetime.now().date(), min_value=datetime.now().date())
         t_s_raw = st.text_input("เวลาเริ่ม (เช่น 0800)", value="", placeholder="กรอกเวลา เช่น 0800", max_chars=4)
         st.markdown("---")
         d_end = st.date_input("วันที่สิ้นสุด", d_start, min_value=d_start)
@@ -188,6 +188,8 @@ if choice == "📝 จองใหม่":
     if st.button("ยืนยันการส่งคำขอจอง", use_container_width=True):
         if not name or not dept or ts is None:
             st.warning("⚠️ กรุณากรอกข้อมูลให้ครบถ้วน")
+        elif ts < datetime.now(): # 👈 เพิ่มจุดนี้: เช็คว่าเวลาเริ่มต้น (ts) น้อยกว่าเวลาปัจจุบันหรือไม่
+            st.error("❌ ไม่สามารถจองย้อนหลังได้ กรุณาเลือกเวลาปัจจุบันหรือล่วงหน้า")
         elif ts >= te:
             st.error("❌ เวลาเริ่มต้องมาก่อนเวลาสิ้นสุด")
         else:
