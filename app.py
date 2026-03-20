@@ -18,58 +18,42 @@ LINE_ADD_FRIEND_URL = f"https://line.me/R/ti/p/{CURRENT_BOT_ID}"
 
 st.set_page_config(page_title="ระบบจองรถและห้องประชุม - Sansuisha", layout="wide")
 
-# ==========================================
-# 2. MODERN UI V2 (FIXED CSS) - ปรับปรุงความโค้ง
-# ==========================================
+st.markdown("""
+    <style>
+    @keyframes blinker { 50% { opacity: 0; } }
+    .blink { animation: blinker 1s linear infinite; color: #FF0000; font-weight: bold; font-size: 18px; }
+    .stTextInput input, .stTextArea textarea, .stSelectbox div[data-baseweb="select"] {
+        background-color: #E3F2FD !important; color: #0D47A1 !important; border: 1px solid #BBDEFB !important;
+    }
+    .main-title { font-size: 35px; font-weight: bold; color: #1E88E5; text-align: center; margin-bottom: 20px;}
+    </style>
+""", unsafe_allow_html=True)
 st.markdown("""
 <style>
-    @import url('https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;600;700&display=swap');
 
-    /* Global */
-    html, body, [class*="css"] { font-family: 'Sarabun', sans-serif; background-color: #F8F9FA; }
+/* ปุ่ม link_button ใน sidebar */
+[data-testid="stLinkButton"] a {
+    background-color: #8BC34A !important;
+    color: white !important;
+    border-radius: 8px !important;
+    font-weight: bold !important;
+    border: none !important;
+    text-align: center !important;
+}
 
-    /* Sidebar Fixes */
-    [data-testid="stSidebar"] { background-color: #1A237E !important; }
-    [data-testid="stSidebar"] .stLinkButton a { background-color: #00B900 !important; color: white !important; border-radius: 8px !important; font-weight: bold !important; border: none !important; }
-    [data-testid="stSidebar"] .stSelectbox label p { color: black !important; font-weight: 600 !important; }
-    [data-testid="stSidebar"] div[data-baseweb="select"] > div { color: black !important; background-color: #E3F2FD !important; border-radius: 5px !important; }
-    [data-testid="stSidebar"] .stMarkdown p { color: black !important; }
+/* hover */
+[data-testid="stLinkButton"] a:hover {
+    background-color: #4CAF50 !important;
+}
 
-    /* Dashboard Cards */
-    .card-container { display: flex; gap: 20px; margin-bottom: 30px; }
-    .status-card { background-color: white; padding: 30px 20px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.03); flex: 1; text-align: center; border-bottom: 6px solid #ccc; }
-    .card-label { color: #64748B; font-size: 16px; font-weight: 600; margin-bottom: 15px; display: flex; justify-content: center; align-items: center; gap: 8px; }
-    .card-value { color: #1E293B; font-size: 36px; font-weight: 700; }
-    .card-unit { font-size: 16px; color: #64748B; font-weight: 600; margin-left: 5px; }
+/* click */
+[data-testid="stLinkButton"] a:active {
+    background-color: #2E7D32 !important;
+}
 
-    /* Status Grid & Item */
-    .res-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 20px; margin-top: 15px; }
-    .res-item { background: white; padding: 25px 15px; border-radius: 12px; border: 1px solid #E2E8F0; text-align: center; box-shadow: 0 2px 8px rgba(0,0,0,0.02); display: flex; flex-direction: column; align-items: center; justify-content: center; }
-    .res-name { font-weight: 700; color: #1A237E; font-size: 16px; margin-bottom: 15px; }
-
-    /* --- [✅ จุดที่แก้: ป้ายสถานะทรงแคปซูล] --- */
-    .badge {
-        display: inline-block;
-        padding: 8px 25px; /* เพิ่ม padding เพื่อให้ดูมีพื้นที่ */
-        border-radius: 50px !important; /* บังคับให้เป็นแคปซูลยาเป๊ะๆ */
-        font-size: 14px;
-        font-weight: 700;
-        border: 2px solid transparent; /* เตรียมขอบไว้ */
-    }
-    /* ป้ายแดง (ไม่ว่าง) ให้เหมือนรูป */
-    .status-busy {
-        background-color: #FEE2E2 !important; /* สีแดงอ่อนมาก */
-        color: #991B1B !important; /* ตัวหนังสือแดงเข้ม */
-        border-color: #FECACA !important; /* ขอบแดงอ่อน */
-    }
-    /* ป้ายเขียว (ว่าง) ให้เหมือนรูป */
-    .status-free {
-        background-color: #DCFCE7 !important; /* สีเขียวอ่อนมาก */
-        color: #166534 !important; /* ตัวหนังสือเขียวเข้ม */
-        border-color: #A7F3D0 !important; /* ขอบเขียวอ่อน */
-    }
 </style>
 """, unsafe_allow_html=True)
+
 # ==========================================
 # 2. ฟังก์ชันหลัก (CORE FUNCTIONS)
 # ==========================================
@@ -166,89 +150,17 @@ choice = st.sidebar.selectbox("เมนูจัดการระบบ", menu
 # 4. หน้าจองใหม่ (BOOKING)
 # ==========================================
 if choice == "📝 จองใหม่":
-    st.markdown("""
-        <div class="v2-header">
-            <h1 class="v2-title">Resource Booking Portal</h1>
-            <p class="v2-subtitle">ระบบจองรถยนต์และห้องประชุมส่วนกลาง | Sansuisha (Thailand)</p>
-        </div>
-    """, unsafe_allow_html=True)
+    st.markdown('<div class="main-title">ระบบจองรถยนต์และห้องประชุม Online</div>', unsafe_allow_html=True)
     
-    # ----------------------------------------------------
-    # [แก้ไขตรรกะ: นับเฉพาะรายการของ "วันนี้" จริงๆ]
-    # ----------------------------------------------------
+    t_start_day = datetime.now().replace(hour=0, minute=0, second=0).isoformat()
+    today_approved = supabase.table("bookings").select("id").eq("status", "Approved").gte("start_time", t_start_day).execute().data
     
-    # ดึงข้อมูลที่อนุมัติแล้วทั้งหมดมาไว้ในตัวแปรเดียว
-    all_approved_res = supabase.table("bookings").select("*").eq("status", "Approved").execute()
-    all_approved_data = all_approved_res.data if all_approved_res.data else []
-    
-    # นับเฉพาะรายการที่คิวเริ่มใน "วันนี้" เท่านั้น (ไม่นับพรุ่งนี้)
-    today_bookings = [b for b in all_approved_data if start_today <= pd.to_datetime(b['start_time']).replace(tzinfo=None) < end_today]
-    today_count = len(today_bookings)
-    
-    # --- [ส่วน Dashboard Cards V2] ---
-    card_html = f"""
-    <div class="card-container">
-        <div class="status-card" style="border-bottom-color: #1A237E;">
-            <div class="card-label">📅 รายการจองวันนี้</div>
-            <div class="card-value">{today_count}<span class="card-unit">รายการ</span></div>
-        </div>
-        <div class="status-card" style="border-bottom-color: #F59E0B;">
-            <div class="card-label">⏳ รอเพื่ออนุมัติ</div>
-            <div class="card-value">{pending_count}<span class="card-unit">รายการ</span></div>
-        </div>
-        <div class="status-card" style="border-bottom-color: #10B981;">
-            <div class="card-label">🖥️ ฐานข้อมูล</div>
-            <div class="card-value" style="color: #10B981; font-size: 20px; margin-top: 10px;">● Online</div>
-        </div>
-    </div>
-    """
-    st.markdown(card_html, unsafe_allow_html=True)
+    d1, d2, d3 = st.columns(3)
+    d1.metric("รายการจองวันนี้", f"{len(today_approved)} รายการ")
+    d2.metric("รอพี่อนุมัติ", f"{pending_count} รายการ")
+    d3.metric("สถานะฐานข้อมูล", "Connected")
     st.markdown("---")
 
-    # --- [Step 2: แยกกลุ่มแสดงสถานะความว่าง V2 (ปรับเป็น 2 สี แดง/เขียว ตามต้องการ)] ---
-    def generate_res_grid(res_list, title_text, icon):
-        html = f'<h3 style="color: #1A237E; margin-top: 30px; font-weight: 700;">{icon} {title_text}</h3><div class="res-grid">'
-        for r in res_list:
-            current_user = None
-            today_times = []
-            
-            # วนลูปเช็คคิวทั้งหมดที่อนุมัติแล้ว
-            for b in all_approved_data:
-                if b['resource'] == r:
-                    s_dt = pd.to_datetime(b['start_time']).replace(tzinfo=None)
-                    e_dt = pd.to_datetime(b['end_time']).replace(tzinfo=None)
-                    
-                    # 1. เช็คว่า "ตอนนี้" (Real-time) กำลังถูกใช้งานอยู่ไหม?
-                    if s_dt <= now <= e_dt:
-                        current_user = b['requester']
-                        
-                    # 2. เก็บ "เวลาการใช้งานทั้งหมด" ของวันนี้ (ทั้งอดีต ปัจจุบัน อนาคต)
-                    if s_dt.date() == now.date() or e_dt.date() == now.date():
-                        today_times.append(f"{s_dt.strftime('%H:%M')}-{e_dt.strftime('%H:%M')}")
-
-            # --- สร้างป้ายสถานะ (Badge) มีแค่ แดง กับ เขียว ---
-            if current_user:
-                # สถานะ: กำลังใช้งาน -> สีแดง
-                html += f'<div class="res-item"><span class="res-name">{r}</span><span class="badge status-busy">❌ ไม่ว่าง ({current_user})</span></div>'
-            else:
-                # สถานะ: ว่าง -> สีเขียว (ถ้ามีคิววันนี้ให้แสดงเวลาด้วย)
-                if today_times:
-                    today_times.sort() # เรียงเวลาจากเช้าไปเย็น
-                    times_str = ", ".join(today_times)
-                    html += f'<div class="res-item"><span class="res-name">{r}</span><span class="badge status-free">✅ ว่าง ({times_str})</span></div>'
-                else:
-                    html += f'<div class="res-item"><span class="res-name">{r}</span><span class="badge status-free">✅ ว่าง</span></div>'
-                
-        html += '</div>'
-        return html
-
-    car_list = ["Civic (ตุ้ม)", "Civic (บอล)", "Camry (เนก)", "MG", "MG (เนก)"]
-    room_list = ["ห้องชั้น 1 (ห้องใหญ่)", "ห้องชั้น 2", "ห้อง VIP", "ห้องชั้นลอย", "ห้อง Production"]
-
-    st.markdown(generate_res_grid(car_list, "สถานะรถยนต์", "🚗"), unsafe_allow_html=True)
-    st.markdown(generate_res_grid(room_list, "สถานะห้องประชุม", "🏢"), unsafe_allow_html=True)
-    st.markdown("---")
-    
     col1, col2 = st.columns(2)
     with col1:
         cat = st.radio("ประเภททรัพยากร", ["รถยนต์", "ห้องประชุม"], horizontal=True)
