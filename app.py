@@ -265,16 +265,43 @@ if choice == "📝 จองใหม่":
     st.markdown(card_html, unsafe_allow_html=True)
     st.markdown("---")
 
-    # --- [Step 2: แยกกลุ่มแสดงสถานะความว่าง V2] ---
+    # --- [Step 2: แยกกลุ่มแสดงสถานะความว่าง V2 (อัปเกรดให้ฉลาดขึ้น)] ---
     def generate_res_grid(res_list, title_text, icon):
         html = f'<h3 style="color: #1A237E; margin-top: 30px; font-weight: 700;">{icon} {title_text}</h3><div class="res-grid">'
         for r in res_list:
-            # เช็คว่าตอนนี้เวลานี้ มีใครใช้งานอยู่หรือไม่
-            busy_user = next((b['requester'] for b in all_approved_data if b['resource'] == r and pd.to_datetime(b['start_time']).replace(tzinfo=None) <= now <= pd.to_datetime(b['end_time']).replace(tzinfo=None)), None)
-            if busy_user:
-                html += f'<div class="res-item"><span class="res-name">{r}</span><span class="badge status-busy">❌ ไม่ว่าง ({busy_user})</span></div>'
+            current_user = None
+            upcoming_time = None
+            
+            # วนลูปเช็คคิวทั้งหมดที่อนุมัติแล้ว
+            for b in all_approved_data:
+                if b['resource'] == r:
+                    # แปลงเวลาให้เป็นรูปแบบคำนวณได้
+                    s_dt = pd.to_datetime(b['start_time']).replace(tzinfo=None)
+                    e_dt = pd.to_datetime(b['end_time']).replace(tzinfo=None)
+                    
+                    # 1. เช็คว่า "ตอนนี้" (Real-time) กำลังถูกใช้งานอยู่ไหม?
+                    if s_dt <= now <= e_dt:
+                        current_user = b['requester']
+                        break # ถ้าเจอว่ากำลังใช้งานอยู่ ให้หยุดหาคิวอื่นทันที
+                    
+                    # 2. เช็คว่ามีคิว "กำลังจะมาถึงในวันนี้" ไหม? (เผื่อตอนนี้ว่าง แต่เดี๋ยวจะมีคนใช้)
+                    elif s_dt > now and s_dt.date() == now.date():
+                        # หาคิวที่เวลาใกล้ที่สุด
+                        if upcoming_time is None or s_dt < upcoming_time['time']:
+                            upcoming_time = {'time': s_dt, 'name': b['requester']}
+
+            # --- สร้างป้ายสถานะ (Badge) ตามเงื่อนไข ---
+            if current_user:
+                # สถานะ: กำลังใช้งาน
+                html += f'<div class="res-item"><span class="res-name">{r}</span><span class="badge status-busy">❌ ไม่ว่าง ({current_user})</span></div>'
+            elif upcoming_time:
+                # สถานะ: ตอนนี้ว่าง แต่เดี๋ยวจะมีคิว
+                time_str = upcoming_time['time'].strftime('%H:%M')
+                html += f'<div class="res-item"><span class="res-name">{r}</span><span class="badge" style="background-color: #FEF3C7; color: #B45309;">🟡 ว่าง (มีคิวตอน {time_str})</span></div>'
             else:
-                html += f'<div class="res-item"><span class="res-name">{r}</span><span class="badge status-free">✅ ว่าง</span></div>'
+                # สถานะ: ว่างยาวๆ ไม่มีคิวแล้ววันนี้
+                html += f'<div class="res-item"><span class="res-name">{r}</span><span class="badge status-free">✅ ว่างทั้งวัน</span></div>'
+                
         html += '</div>'
         return html
 
