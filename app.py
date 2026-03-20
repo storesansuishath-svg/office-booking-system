@@ -219,7 +219,7 @@ elif choice == "📅 ตารางงาน (Real-time)":
     view_cat = f_c2.selectbox("กรองตามประเภท", ["ทั้งหมด", "รถยนต์", "ห้องประชุม"])
     
     now_iso = datetime.now().isoformat()
-    db_res = supabase.table("bookings").select("*").eq("status", "Approved").gt("end_time", now_iso).order("start_time").execute()
+    db_res = supabase.table("bookings").select("*").eq("status", "Approved").gte("start_time", t_start_day.isoformat()).order("start_time").execute()
     df = pd.DataFrame(db_res.data)
     
     if df.empty:
