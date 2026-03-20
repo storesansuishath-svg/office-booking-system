@@ -170,10 +170,12 @@ if choice == "📝 จองใหม่":
     if st.button("ยืนยันการส่งคำขอจอง", use_container_width=True):
         if not name or not dept or ts is None:
             st.warning("⚠️ กรุณากรอกข้อมูลให้ครบถ้วน")
-        elif ts < datetime.now(): 
+        elif ts < datetime.now(): # 👈 เพิ่มจุดนี้: เช็คว่าเวลาเริ่มต้น (ts) น้อยกว่าเวลาปัจจุบันหรือไม่
             st.error("❌ ไม่สามารถจองย้อนหลังได้ กรุณาเลือกเวลาปัจจุบันหรือล่วงหน้า")
         elif ts >= te:
             st.error("❌ เวลาเริ่มต้องมาก่อนเวลาสิ้นสุด")
+        else:
+            # รับค่า 3 ตัวแปร (เพิ่ม status_conf)
         else:
             is_conf, user_conf, status_conf = check_booking_conflict(res, ts.isoformat(), te.isoformat())
             if is_conf:
