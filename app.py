@@ -219,6 +219,9 @@ choice = st.sidebar.selectbox("เมนูจัดการระบบ", menu
 # ==========================================
 # 4. หน้าจองใหม่ (BOOKING)
 # ==========================================
+# ==========================================
+# 4. หน้าจองใหม่ (BOOKING)
+# ==========================================
 if choice == "📝 จองใหม่":
     st.markdown("""
         <div class="v2-header">
@@ -227,16 +230,27 @@ if choice == "📝 จองใหม่":
         </div>
     """, unsafe_allow_html=True)
     
-    t_start_day = datetime.now().replace(hour=0, minute=0, second=0).isoformat()
-    today_approved = supabase.table("bookings").select("id").eq("status", "Approved").gte("start_time", t_start_day).execute().data
+    # ----------------------------------------------------
+    # [แก้ไขตรรกะ: นับเฉพาะรายการของ "วันนี้" จริงๆ]
+    # ----------------------------------------------------
+    now = datetime.now()
+    start_today = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    end_today = start_today + timedelta(days=1)
     
-    # --- [ส่วน Dashboard Cards V2] ---
+    # ดึงข้อมูลที่อนุมัติแล้วทั้งหมดมาไว้ในตัวแปรเดียว
+    all_approved_res = supabase.table("bookings").select("*").eq("status", "Approved").execute()
+    all_approved_data = all_approved_res.data if all_approved_res.data else []
+    
+    # นับเฉพาะรายการที่คิวเริ่มใน "วันนี้" เท่านั้น (ไม่นับพรุ่งนี้)
+    today_bookings = [b for b in all_approved_data if start_today <= pd.to_datetime(b['start_time']).replace(tzinfo=None) < end_today]
+    today_count = len(today_bookings)
+    
     # --- [ส่วน Dashboard Cards V2] ---
     card_html = f"""
     <div class="card-container">
         <div class="status-card" style="border-bottom-color: #1A237E;">
             <div class="card-label">📅 รายการจองวันนี้</div>
-            <div class="card-value">{len(today_approved)}<span class="card-unit">รายการ</span></div>
+            <div class="card-value">{today_count}<span class="card-unit">รายการ</span></div>
         </div>
         <div class="status-card" style="border-bottom-color: #F59E0B;">
             <div class="card-label">⏳ รอเพื่ออนุมัติ</div>
@@ -249,6 +263,26 @@ if choice == "📝 จองใหม่":
     </div>
     """
     st.markdown(card_html, unsafe_allow_html=True)
+    st.markdown("---")
+
+    # --- [Step 2: แยกกลุ่มแสดงสถานะความว่าง V2] ---
+    def generate_res_grid(res_list, title_text, icon):
+        html = f'<h3 style="color: #1A237E; margin-top: 30px; font-weight: 700;">{icon} {title_text}</h3><div class="res-grid">'
+        for r in res_list:
+            # เช็คว่าตอนนี้เวลานี้ มีใครใช้งานอยู่หรือไม่
+            busy_user = next((b['requester'] for b in all_approved_data if b['resource'] == r and pd.to_datetime(b['start_time']).replace(tzinfo=None) <= now <= pd.to_datetime(b['end_time']).replace(tzinfo=None)), None)
+            if busy_user:
+                html += f'<div class="res-item"><span class="res-name">{r}</span><span class="badge status-busy">❌ ไม่ว่าง ({busy_user})</span></div>'
+            else:
+                html += f'<div class="res-item"><span class="res-name">{r}</span><span class="badge status-free">✅ ว่าง</span></div>'
+        html += '</div>'
+        return html
+
+    car_list = ["Civic (ตุ้ม)", "Civic (บอล)", "Camry (เนก)", "MG", "MG (เนก)"]
+    room_list = ["ห้องชั้น 1 (ห้องใหญ่)", "ห้องชั้น 2", "ห้อง VIP", "ห้องชั้นลอย", "ห้อง Production"]
+
+    st.markdown(generate_res_grid(car_list, "สถานะรถยนต์", "🚗"), unsafe_allow_html=True)
+    st.markdown(generate_res_grid(room_list, "สถานะห้องประชุม", "🏢"), unsafe_allow_html=True)
     st.markdown("---")
     # --- [Step 2: แยกกลุ่มแสดงสถานะความว่าง V2] ---
     now = datetime.now()
