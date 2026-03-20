@@ -176,8 +176,7 @@ if choice == "📝 จองใหม่":
     # ----------------------------------------------------
     # [แก้ไขตรรกะ: นับเฉพาะรายการของ "วันนี้" จริงๆ]
     # ----------------------------------------------------
-    now = datetime.now()
-    start_today = now.replace(hour=0, minute=0, second=0, microsecond=0)
+      start_today = now.replace(hour=0, minute=0, second=0, microsecond=0)
     end_today = start_today + timedelta(days=1)
     
     # ดึงข้อมูลที่อนุมัติแล้วทั้งหมดมาไว้ในตัวแปรเดียว
