@@ -219,9 +219,6 @@ choice = st.sidebar.selectbox("เมนูจัดการระบบ", menu
 # ==========================================
 # 4. หน้าจองใหม่ (BOOKING)
 # ==========================================
-# ==========================================
-# 4. หน้าจองใหม่ (BOOKING)
-# ==========================================
 if choice == "📝 จองใหม่":
     st.markdown("""
         <div class="v2-header">
@@ -265,42 +262,39 @@ if choice == "📝 จองใหม่":
     st.markdown(card_html, unsafe_allow_html=True)
     st.markdown("---")
 
-    # --- [Step 2: แยกกลุ่มแสดงสถานะความว่าง V2 (อัปเกรดให้ฉลาดขึ้น)] ---
+    # --- [Step 2: แยกกลุ่มแสดงสถานะความว่าง V2 (ปรับเป็น 2 สี แดง/เขียว ตามต้องการ)] ---
     def generate_res_grid(res_list, title_text, icon):
         html = f'<h3 style="color: #1A237E; margin-top: 30px; font-weight: 700;">{icon} {title_text}</h3><div class="res-grid">'
         for r in res_list:
             current_user = None
-            upcoming_time = None
+            today_times = []
             
             # วนลูปเช็คคิวทั้งหมดที่อนุมัติแล้ว
             for b in all_approved_data:
                 if b['resource'] == r:
-                    # แปลงเวลาให้เป็นรูปแบบคำนวณได้
                     s_dt = pd.to_datetime(b['start_time']).replace(tzinfo=None)
                     e_dt = pd.to_datetime(b['end_time']).replace(tzinfo=None)
                     
                     # 1. เช็คว่า "ตอนนี้" (Real-time) กำลังถูกใช้งานอยู่ไหม?
                     if s_dt <= now <= e_dt:
                         current_user = b['requester']
-                        break # ถ้าเจอว่ากำลังใช้งานอยู่ ให้หยุดหาคิวอื่นทันที
-                    
-                    # 2. เช็คว่ามีคิว "กำลังจะมาถึงในวันนี้" ไหม? (เผื่อตอนนี้ว่าง แต่เดี๋ยวจะมีคนใช้)
-                    elif s_dt > now and s_dt.date() == now.date():
-                        # หาคิวที่เวลาใกล้ที่สุด
-                        if upcoming_time is None or s_dt < upcoming_time['time']:
-                            upcoming_time = {'time': s_dt, 'name': b['requester']}
+                        
+                    # 2. เก็บ "เวลาการใช้งานทั้งหมด" ของวันนี้ (ทั้งอดีต ปัจจุบัน อนาคต)
+                    if s_dt.date() == now.date() or e_dt.date() == now.date():
+                        today_times.append(f"{s_dt.strftime('%H:%M')}-{e_dt.strftime('%H:%M')}")
 
-            # --- สร้างป้ายสถานะ (Badge) ตามเงื่อนไข ---
+            # --- สร้างป้ายสถานะ (Badge) มีแค่ แดง กับ เขียว ---
             if current_user:
-                # สถานะ: กำลังใช้งาน
+                # สถานะ: กำลังใช้งาน -> สีแดง
                 html += f'<div class="res-item"><span class="res-name">{r}</span><span class="badge status-busy">❌ ไม่ว่าง ({current_user})</span></div>'
-            elif upcoming_time:
-                # สถานะ: ตอนนี้ว่าง แต่เดี๋ยวจะมีคิว
-                time_str = upcoming_time['time'].strftime('%H:%M')
-                html += f'<div class="res-item"><span class="res-name">{r}</span><span class="badge" style="background-color: #FEF3C7; color: #B45309;">🟡 ว่าง (มีคิวตอน {time_str})</span></div>'
             else:
-                # สถานะ: ว่างยาวๆ ไม่มีคิวแล้ววันนี้
-                html += f'<div class="res-item"><span class="res-name">{r}</span><span class="badge status-free">✅ ว่างทั้งวัน</span></div>'
+                # สถานะ: ว่าง -> สีเขียว (ถ้ามีคิววันนี้ให้แสดงเวลาด้วย)
+                if today_times:
+                    today_times.sort() # เรียงเวลาจากเช้าไปเย็น
+                    times_str = ", ".join(today_times)
+                    html += f'<div class="res-item"><span class="res-name">{r}</span><span class="badge status-free">✅ ว่าง ({times_str})</span></div>'
+                else:
+                    html += f'<div class="res-item"><span class="res-name">{r}</span><span class="badge status-free">✅ ว่าง</span></div>'
                 
         html += '</div>'
         return html
@@ -311,32 +305,7 @@ if choice == "📝 จองใหม่":
     st.markdown(generate_res_grid(car_list, "สถานะรถยนต์", "🚗"), unsafe_allow_html=True)
     st.markdown(generate_res_grid(room_list, "สถานะห้องประชุม", "🏢"), unsafe_allow_html=True)
     st.markdown("---")
-    # --- [Step 2: แยกกลุ่มแสดงสถานะความว่าง V2] ---
-    now = datetime.now()
-    today_res = supabase.table("bookings").select("*").eq("status", "Approved").execute()
-    today_data = today_res.data if today_res.data else []
-
-    # ฟังก์ชันช่วยสร้าง Grid แยกตามกลุ่ม
-    # ฟังก์ชันช่วยสร้าง Grid แยกตามกลุ่ม
-    def generate_res_grid(res_list, title_text, icon):
-        html = f'<h3 style="color: #1A237E; margin-top: 30px; font-weight: 700;">{icon} {title_text}</h3><div class="res-grid">'
-        for r in res_list:
-            busy_user = next((b['requester'] for b in today_data if b['resource'] == r and pd.to_datetime(b['start_time']).replace(tzinfo=None) <= now <= pd.to_datetime(b['end_time']).replace(tzinfo=None)), None)
-            if busy_user:
-                html += f'<div class="res-item"><span class="res-name">{r}</span><span class="badge status-busy">❌ ไม่ว่าง ({busy_user})</span></div>'
-            else:
-                html += f'<div class="res-item"><span class="res-name">{r}</span><span class="badge status-free">✅ ว่าง</span></div>'
-        html += '</div>'
-        return html
-
-    car_list = ["Civic (ตุ้ม)", "Civic (บอล)", "Camry (เนก)", "MG", "MG (เนก)"]
-    room_list = ["ห้องชั้น 1 (ห้องใหญ่)", "ห้องชั้น 2", "ห้อง VIP", "ห้องชั้นลอย", "ห้อง Production"]
-
-    # แสดงผลแยกหมวดหมู่
-    st.markdown(generate_res_grid(car_list, "สถานะรถยนต์", "🚗"), unsafe_allow_html=True)
-    st.markdown(generate_res_grid(room_list, "สถานะห้องประชุม", "🏢"), unsafe_allow_html=True)
-    st.markdown("---")
-
+    
     col1, col2 = st.columns(2)
     with col1:
         cat = st.radio("ประเภททรัพยากร", ["รถยนต์", "ห้องประชุม"], horizontal=True)
