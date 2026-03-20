@@ -150,15 +150,34 @@ choice = st.sidebar.selectbox("เมนูจัดการระบบ", menu
 # 4. หน้าจองใหม่ (BOOKING)
 # ==========================================
 if choice == "📝 จองใหม่":
-    st.markdown('<div class="main-title">ระบบจองรถยนต์และห้องประชุม Online</div>', unsafe_allow_html=True)
+    st.markdown("""
+        <div class="v2-header">
+            <h1 class="v2-title">Resource Booking Portal</h1>
+            <p class="v2-subtitle">ระบบจองรถยนต์และห้องประชุมส่วนกลาง | Sansuisha (Thailand)</p>
+        </div>
+    """, unsafe_allow_html=True)
     
     t_start_day = datetime.now().replace(hour=0, minute=0, second=0).isoformat()
     today_approved = supabase.table("bookings").select("id").eq("status", "Approved").gte("start_time", t_start_day).execute().data
     
-    d1, d2, d3 = st.columns(3)
-    d1.metric("รายการจองวันนี้", f"{len(today_approved)} รายการ")
-    d2.metric("รอพี่อนุมัติ", f"{pending_count} รายการ")
-    d3.metric("สถานะฐานข้อมูล", "Connected")
+    # --- [ส่วน Dashboard Cards V2] ---
+    card_html = f"""
+    <div class="card-container">
+        <div class="status-card" style="border-bottom-color: #1A237E;">
+            <div class="card-label">📅 รายการจองวันนี้</div>
+            <div class="card-value">{len(today_approved)} <span style="font-size:14px;">รายการ</span></div>
+        </div>
+        <div class="status-card" style="border-bottom-color: #F59E0B;">
+            <div class="card-label">⏳ รอพี่อนุมัติ</div>
+            <div class="card-value">{pending_count} <span style="font-size:14px;">รายการ</span></div>
+        </div>
+        <div class="status-card" style="border-bottom-color: #10B981;">
+            <div class="card-label">🖥️ ฐานข้อมูล</div>
+            <div class="card-value" style="font-size:18px; color: #10B981;">● Online</div>
+        </div>
+    </div>
+    """
+    st.markdown(card_html, unsafe_allow_html=True)
     st.markdown("---")
     # --- [Step 2: แยกกลุ่มแสดงสถานะความว่าง V2] ---
     now = datetime.now()
