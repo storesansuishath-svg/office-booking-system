@@ -19,111 +19,57 @@ LINE_ADD_FRIEND_URL = f"https://line.me/R/ti/p/{CURRENT_BOT_ID}"
 st.set_page_config(page_title="ระบบจองรถและห้องประชุม - Sansuisha", layout="wide")
 
 # ==========================================
-# 2. MODERN UI V2 (FIXED CSS)
+# 2. MODERN UI V2 (FIXED CSS) - ปรับปรุงความโค้ง
 # ==========================================
 st.markdown("""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;600;700&display=swap');
 
-    /* 1. Global & Fonts */
-    html, body, [class*="css"] {
-        font-family: 'Sarabun', sans-serif;
-        background-color: #F8F9FA;
-    }
+    /* Global */
+    html, body, [class*="css"] { font-family: 'Sarabun', sans-serif; background-color: #F8F9FA; }
 
-    /* --- Sidebar Fixes (ตามที่คุณต้องการ) --- */
+    /* Sidebar Fixes */
     [data-testid="stSidebar"] { background-color: #1A237E !important; }
-    [data-testid="stSidebar"] .stLinkButton a {
-        background-color: #00B900 !important; /* สีเขียว LINE เดิม */
-        color: white !important;
-        border-radius: 8px !important;
-        font-weight: bold !important;
-        border: none !important;
-    }
+    [data-testid="stSidebar"] .stLinkButton a { background-color: #00B900 !important; color: white !important; border-radius: 8px !important; font-weight: bold !important; border: none !important; }
     [data-testid="stSidebar"] .stSelectbox label p { color: black !important; font-weight: 600 !important; }
-    [data-testid="stSidebar"] div[data-baseweb="select"] > div { 
-        color: black !important; 
-        background-color: #E3F2FD !important; 
-        border-radius: 5px !important;
-    }
+    [data-testid="stSidebar"] div[data-baseweb="select"] > div { color: black !important; background-color: #E3F2FD !important; border-radius: 5px !important; }
     [data-testid="stSidebar"] .stMarkdown p { color: black !important; }
 
-    /* --- Dashboard Cards (ปรับให้เหมือนรูป) --- */
-    .card-container {
-        display: flex;
-        justify-content: space-between;
-        gap: 20px;
-        margin-bottom: 30px;
-        width: 100%;
-    }
-    .status-card {
-        background-color: white;
-        padding: 30px 20px;
-        border-radius: 12px;
-        box-shadow: 0 4px 15px rgba(0,0,0,0.03); /* เงาบางๆ */
-        flex: 1;
-        text-align: center;
-        border-bottom: 6px solid #ccc;
-    }
-    .card-label { 
-        color: #64748B; 
-        font-size: 16px; 
-        font-weight: 600; 
-        margin-bottom: 15px; 
-        display: flex;
-        justify-content: center;
-        align-items: center;
-        gap: 8px;
-    }
-    .card-value { 
-        color: #1E293B; 
-        font-size: 36px; /* ตัวเลขใหญ่สะใจ */
-        font-weight: 700; 
-    }
-    .card-unit {
-        font-size: 16px;
-        color: #64748B;
-        font-weight: 600;
-        margin-left: 5px;
-    }
+    /* Dashboard Cards */
+    .card-container { display: flex; gap: 20px; margin-bottom: 30px; }
+    .status-card { background-color: white; padding: 30px 20px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.03); flex: 1; text-align: center; border-bottom: 6px solid #ccc; }
+    .card-label { color: #64748B; font-size: 16px; font-weight: 600; margin-bottom: 15px; display: flex; justify-content: center; align-items: center; gap: 8px; }
+    .card-value { color: #1E293B; font-size: 36px; font-weight: 700; }
+    .card-unit { font-size: 16px; color: #64748B; font-weight: 600; margin-left: 5px; }
 
-    /* --- Status Grid (ปรับให้เหมือนรูป) --- */
-    .res-grid {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-        gap: 20px;
-        margin-top: 15px;
-    }
-    .res-item {
-        background: white;
-        padding: 25px 15px;
-        border-radius: 12px;
-        border: 1px solid #E2E8F0; /* ขอบเทาอ่อน */
-        text-align: center;
-        box-shadow: 0 2px 8px rgba(0,0,0,0.02);
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        justify-content: center;
-    }
-    .res-name { 
-        font-weight: 700; 
-        color: #1A237E; /* สีกรมท่า */
-        font-size: 16px; 
-        margin-bottom: 15px; 
-    }
+    /* Status Grid & Item */
+    .res-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 20px; margin-top: 15px; }
+    .res-item { background: white; padding: 25px 15px; border-radius: 12px; border: 1px solid #E2E8F0; text-align: center; box-shadow: 0 2px 8px rgba(0,0,0,0.02); display: flex; flex-direction: column; align-items: center; justify-content: center; }
+    .res-name { font-weight: 700; color: #1A237E; font-size: 16px; margin-bottom: 15px; }
+
+    /* --- [✅ จุดที่แก้: ป้ายสถานะทรงแคปซูล] --- */
     .badge {
         display: inline-block;
-        padding: 6px 20px;
-        border-radius: 50px; /* ทรงแคปซูล */
+        padding: 8px 25px; /* เพิ่ม padding เพื่อให้ดูมีพื้นที่ */
+        border-radius: 50px !important; /* บังคับให้เป็นแคปซูลยาเป๊ะๆ */
         font-size: 14px;
         font-weight: 700;
+        border: 2px solid transparent; /* เตรียมขอบไว้ */
     }
-    .status-free { background-color: #D1FAE5; color: #065F46; } /* เขียวอ่อน/เขียวเข้ม */
-    .status-busy { background-color: #FCE7F3; color: #9D174D; } /* แดงอ่อน/แดงเข้ม */
+    /* ป้ายแดง (ไม่ว่าง) ให้เหมือนรูป */
+    .status-busy {
+        background-color: #FEE2E2 !important; /* สีแดงอ่อนมาก */
+        color: #991B1B !important; /* ตัวหนังสือแดงเข้ม */
+        border-color: #FECACA !important; /* ขอบแดงอ่อน */
+    }
+    /* ป้ายเขียว (ว่าง) ให้เหมือนรูป */
+    .status-free {
+        background-color: #DCFCE7 !important; /* สีเขียวอ่อนมาก */
+        color: #166534 !important; /* ตัวหนังสือเขียวเข้ม */
+        border-color: #A7F3D0 !important; /* ขอบเขียวอ่อน */
+    }
 </style>
 """, unsafe_allow_html=True)
-
 # ==========================================
 # 2. ฟังก์ชันหลัก (CORE FUNCTIONS)
 # ==========================================
