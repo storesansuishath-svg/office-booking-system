@@ -160,6 +160,30 @@ if choice == "📝 จองใหม่":
     d2.metric("รอพี่อนุมัติ", f"{pending_count} รายการ")
     d3.metric("สถานะฐานข้อมูล", "Connected")
     st.markdown("---")
+    # --- [Step 2: แยกกลุ่มแสดงสถานะความว่าง V2] ---
+    now = datetime.now()
+    today_res = supabase.table("bookings").select("*").eq("status", "Approved").execute()
+    today_data = today_res.data if today_res.data else []
+
+    # ฟังก์ชันช่วยสร้าง Grid แยกตามกลุ่ม
+    def generate_res_grid(res_list, title_text, icon):
+        html = f'<h4 style="color: #1A237E; margin-top: 20px;">{icon} {title_text}</h4><div class="res-grid">'
+        for r in res_list:
+            busy_user = next((b['requester'] for b in today_data if b['resource'] == r and pd.to_datetime(b['start_time']).replace(tzinfo=None) <= now <= pd.to_datetime(b['end_time']).replace(tzinfo=None)), None)
+            if busy_user:
+                html += f'<div class="res-item"><span class="res-name">{r}</span><span class="badge status-busy">❌ ไม่ว่าง ({busy_user})</span></div>'
+            else:
+                html += f'<div class="res-item"><span class="res-name">{r}</span><span class="badge status-free">✅ ว่าง</span></div>'
+        html += '</div>'
+        return html
+
+    car_list = ["Civic (ตุ้ม)", "Civic (บอล)", "Camry (เนก)", "MG", "MG (เนก)"]
+    room_list = ["ห้องชั้น 1 (ห้องใหญ่)", "ห้องชั้น 2", "ห้อง VIP", "ห้องชั้นลอย", "ห้อง Production"]
+
+    # แสดงผลแยกหมวดหมู่
+    st.markdown(generate_res_grid(car_list, "สถานะรถยนต์", "🚗"), unsafe_allow_html=True)
+    st.markdown(generate_res_grid(room_list, "สถานะห้องประชุม", "🏢"), unsafe_allow_html=True)
+    st.markdown("---")
 
     col1, col2 = st.columns(2)
     with col1:
