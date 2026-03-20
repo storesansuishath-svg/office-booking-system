@@ -18,39 +18,109 @@ LINE_ADD_FRIEND_URL = f"https://line.me/R/ti/p/{CURRENT_BOT_ID}"
 
 st.set_page_config(page_title="ระบบจองรถและห้องประชุม - Sansuisha", layout="wide")
 
-st.markdown("""
-    <style>
-    @keyframes blinker { 50% { opacity: 0; } }
-    .blink { animation: blinker 1s linear infinite; color: #FF0000; font-weight: bold; font-size: 18px; }
-    .stTextInput input, .stTextArea textarea, .stSelectbox div[data-baseweb="select"] {
-        background-color: #E3F2FD !important; color: #0D47A1 !important; border: 1px solid #BBDEFB !important;
-    }
-    .main-title { font-size: 35px; font-weight: bold; color: #1E88E5; text-align: center; margin-bottom: 20px;}
-    </style>
-""", unsafe_allow_html=True)
+# ==========================================
+# 2. MODERN UI V2 (FIXED CSS)
+# ==========================================
 st.markdown("""
 <style>
+    @import url('https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;600;700&display=swap');
 
-/* ปุ่ม link_button ใน sidebar */
-[data-testid="stLinkButton"] a {
-    background-color: #8BC34A !important;
-    color: white !important;
-    border-radius: 8px !important;
-    font-weight: bold !important;
-    border: none !important;
-    text-align: center !important;
-}
+    /* 1. Global & Fonts */
+    html, body, [class*="css"] {
+        font-family: 'Sarabun', sans-serif;
+        background-color: #F8F9FA;
+    }
 
-/* hover */
-[data-testid="stLinkButton"] a:hover {
-    background-color: #4CAF50 !important;
-}
+    /* --- Sidebar Fixes (ตามที่คุณต้องการ) --- */
+    [data-testid="stSidebar"] { background-color: #1A237E !important; }
+    [data-testid="stSidebar"] .stLinkButton a {
+        background-color: #00B900 !important; /* สีเขียว LINE เดิม */
+        color: white !important;
+        border-radius: 8px !important;
+        font-weight: bold !important;
+        border: none !important;
+    }
+    [data-testid="stSidebar"] .stSelectbox label p { color: black !important; font-weight: 600 !important; }
+    [data-testid="stSidebar"] div[data-baseweb="select"] > div { 
+        color: black !important; 
+        background-color: #E3F2FD !important; 
+        border-radius: 5px !important;
+    }
+    [data-testid="stSidebar"] .stMarkdown p { color: black !important; }
 
-/* click */
-[data-testid="stLinkButton"] a:active {
-    background-color: #2E7D32 !important;
-}
+    /* --- Dashboard Cards (ปรับให้เหมือนรูป) --- */
+    .card-container {
+        display: flex;
+        justify-content: space-between;
+        gap: 20px;
+        margin-bottom: 30px;
+        width: 100%;
+    }
+    .status-card {
+        background-color: white;
+        padding: 30px 20px;
+        border-radius: 12px;
+        box-shadow: 0 4px 15px rgba(0,0,0,0.03); /* เงาบางๆ */
+        flex: 1;
+        text-align: center;
+        border-bottom: 6px solid #ccc;
+    }
+    .card-label { 
+        color: #64748B; 
+        font-size: 16px; 
+        font-weight: 600; 
+        margin-bottom: 15px; 
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        gap: 8px;
+    }
+    .card-value { 
+        color: #1E293B; 
+        font-size: 36px; /* ตัวเลขใหญ่สะใจ */
+        font-weight: 700; 
+    }
+    .card-unit {
+        font-size: 16px;
+        color: #64748B;
+        font-weight: 600;
+        margin-left: 5px;
+    }
 
+    /* --- Status Grid (ปรับให้เหมือนรูป) --- */
+    .res-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+        gap: 20px;
+        margin-top: 15px;
+    }
+    .res-item {
+        background: white;
+        padding: 25px 15px;
+        border-radius: 12px;
+        border: 1px solid #E2E8F0; /* ขอบเทาอ่อน */
+        text-align: center;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.02);
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+    }
+    .res-name { 
+        font-weight: 700; 
+        color: #1A237E; /* สีกรมท่า */
+        font-size: 16px; 
+        margin-bottom: 15px; 
+    }
+    .badge {
+        display: inline-block;
+        padding: 6px 20px;
+        border-radius: 50px; /* ทรงแคปซูล */
+        font-size: 14px;
+        font-weight: 700;
+    }
+    .status-free { background-color: #D1FAE5; color: #065F46; } /* เขียวอ่อน/เขียวเข้ม */
+    .status-busy { background-color: #FCE7F3; color: #9D174D; } /* แดงอ่อน/แดงเข้ม */
 </style>
 """, unsafe_allow_html=True)
 
@@ -161,19 +231,20 @@ if choice == "📝 จองใหม่":
     today_approved = supabase.table("bookings").select("id").eq("status", "Approved").gte("start_time", t_start_day).execute().data
     
     # --- [ส่วน Dashboard Cards V2] ---
+    # --- [ส่วน Dashboard Cards V2] ---
     card_html = f"""
     <div class="card-container">
         <div class="status-card" style="border-bottom-color: #1A237E;">
             <div class="card-label">📅 รายการจองวันนี้</div>
-            <div class="card-value">{len(today_approved)} <span style="font-size:14px;">รายการ</span></div>
+            <div class="card-value">{len(today_approved)}<span class="card-unit">รายการ</span></div>
         </div>
         <div class="status-card" style="border-bottom-color: #F59E0B;">
-            <div class="card-label">⏳ รอพี่อนุมัติ</div>
-            <div class="card-value">{pending_count} <span style="font-size:14px;">รายการ</span></div>
+            <div class="card-label">⏳ รอเพื่ออนุมัติ</div>
+            <div class="card-value">{pending_count}<span class="card-unit">รายการ</span></div>
         </div>
         <div class="status-card" style="border-bottom-color: #10B981;">
             <div class="card-label">🖥️ ฐานข้อมูล</div>
-            <div class="card-value" style="font-size:18px; color: #10B981;">● Online</div>
+            <div class="card-value" style="color: #10B981; font-size: 20px; margin-top: 10px;">● Online</div>
         </div>
     </div>
     """
@@ -185,8 +256,9 @@ if choice == "📝 จองใหม่":
     today_data = today_res.data if today_res.data else []
 
     # ฟังก์ชันช่วยสร้าง Grid แยกตามกลุ่ม
+    # ฟังก์ชันช่วยสร้าง Grid แยกตามกลุ่ม
     def generate_res_grid(res_list, title_text, icon):
-        html = f'<h4 style="color: #1A237E; margin-top: 20px;">{icon} {title_text}</h4><div class="res-grid">'
+        html = f'<h3 style="color: #1A237E; margin-top: 30px; font-weight: 700;">{icon} {title_text}</h3><div class="res-grid">'
         for r in res_list:
             busy_user = next((b['requester'] for b in today_data if b['resource'] == r and pd.to_datetime(b['start_time']).replace(tzinfo=None) <= now <= pd.to_datetime(b['end_time']).replace(tzinfo=None)), None)
             if busy_user:
