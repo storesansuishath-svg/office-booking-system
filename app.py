@@ -176,7 +176,7 @@ if choice == "📝 จองใหม่":
 
     <div class="driver-card">
     <h4>🚗 Civic <span style="color:#666; font-size:14px;">(บอล)</span></h4>
-    <p><b>ทะเบียน:</b> 5ขฬ 7680 / กทม</p>
+    <p><b>ทะเบียน:</b> 5ขฬ-7680-กทม</p>
     <p><b>ประเภท:</b> รถรับ-ส่ง คุณเคตะ</p>
     <p><b>คนขับ:</b> บอล (Ball)</p>
     <p><b>โทร:</b> <span class="highlight-text">063-9305458</span></p>
@@ -184,7 +184,7 @@ if choice == "📝 จองใหม่":
 
     <div class="driver-card">
     <h4>🚙 Camry <span style="color:#666; font-size:14px;">(เนก)</span></h4>
-    <p><b>ทะเบียน:</b> 6ขข 4068</p>
+    <p><b>ทะเบียน:</b> 6ขข-4068-กทม</p>
     <p><b>ประเภท:</b> รถรับ-ส่ง MD</p>
     <p><b>คนขับ:</b> เนก (Anek)</p>
     <p><b>โทร:</b> <span class="highlight-text">081-0402527</span></p>
@@ -192,7 +192,7 @@ if choice == "📝 จองใหม่":
 
     <div class="driver-card">
     <h4>🚙 MG-EP</h4>
-    <p><b>ทะเบียน:</b> 5ขก 7378 / กทม</p>
+    <p><b>ทะเบียน:</b> 5ขก-7378-กทม</p>
     <p><b>ประเภท:</b> -</p>
     <p><b>คนขับ:</b> -</p>
     <p><b>โทร:</b> <span style="color:#9E9E9E;">-</span></p>
