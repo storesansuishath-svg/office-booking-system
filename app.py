@@ -124,7 +124,7 @@ if choice == "📝 จองใหม่":
     st.markdown('<div class="main-title">ระบบจองรถยนต์และห้องประชุม Online</div>', unsafe_allow_html=True)
     st.markdown('##### 📋 ข้อมูลรถและคนขับ')
     # --- [Step 1: คำนวณสถานะ Real-time] ---
-    now_dt = datetime.now()
+    now_dt = datetime.utcnow() + timedelta(hours=7)
     t_today_start = now_dt.replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
     t_today_end = now_dt.replace(hour=23, minute=59, second=59, microsecond=999999).isoformat()
     
@@ -220,8 +220,8 @@ if choice == "📝 จองใหม่":
     st.markdown(css_style + html_content, unsafe_allow_html=True)
     
     # --- [FIXED: แก้ไข Logic การนับรายการวันนี้] ---
-    now_dt = datetime.now()
-    t_today_start = now_dt.replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
+    now_dt = datetime.utcnow() + timedelta(hours=7)
+    t_today_start = (datetime.utcnow() + timedelta(hours=7)).replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
     t_today_end = now_dt.replace(hour=23, minute=59, second=59, microsecond=999999).isoformat()
     
     # นับเฉพาะรายการที่ "เริ่ม" ภายในวันนี้เท่านั้น
