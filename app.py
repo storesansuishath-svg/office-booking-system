@@ -123,84 +123,101 @@ choice = st.sidebar.selectbox("เมนูจัดการระบบ", menu
 if choice == "📝 จองใหม่":
     st.markdown('<div class="main-title">ระบบจองรถยนต์และห้องประชุม Online</div>', unsafe_allow_html=True)
     st.markdown('##### 📋 ข้อมูลรถและคนขับ')
+    # --- [Step 1: คำนวณสถานะ Real-time] ---
+    now_dt = datetime.now()
+    t_today_start = now_dt.replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
+    t_today_end = now_dt.replace(hour=23, minute=59, second=59, microsecond=999999).isoformat()
+    
+    today_bookings = supabase.table("bookings") \
+        .select("resource, start_time, end_time") \
+        .eq("status", "Approved") \
+        .gte("start_time", t_today_start) \
+        .lte("start_time", t_today_end) \
+        .execute()
+        
+    car_status = {
+        "Civic (ตุ้ม)": {"text": "🟢 ปัจจุบันว่าง", "time": "", "class": "status-free"},
+        "Civic (บอล)": {"text": "🟢 ปัจจุบันว่าง", "time": "", "class": "status-free"},
+        "Camry (เนก)": {"text": "🟢 ปัจจุบันว่าง", "time": "", "class": "status-free"},
+        "MG": {"text": "🟢 ปัจจุบันว่าง", "time": "", "class": "status-free"}
+    }
+    
+    if today_bookings.data:
+        for b in today_bookings.data:
+            res_name = b['resource']
+            key = "MG" if "MG" in res_name else res_name
+            
+            if key in car_status:
+                st_dt = pd.to_datetime(b['start_time']).replace(tzinfo=None)
+                en_dt = pd.to_datetime(b['end_time']).replace(tzinfo=None)
+                
+                if st_dt <= now_dt <= en_dt:
+                    car_status[key]["text"] = "🔴 ไม่ว่าง"
+                    car_status[key]["time"] = f"{st_dt.strftime('%H:%M')} - {en_dt.strftime('%H:%M')}"
+                    car_status[key]["class"] = "status-busy"
 
-    # --- ดัน HTML ให้ชิดขอบซ้ายเพื่อป้องกัน Markdown อ่านเป็น Code Block ---
-    html_cards = """
-    <style>
-    .driver-grid-container {
-    display: grid;
-    grid-template-columns: repeat(2, 1fr);
-    gap: 15px;
-    margin-bottom: 25px;
-    }
-    .driver-card {
-    background-color: #ffffff;
-    border: 1px solid #E3F2FD;
-    border-top: 4px solid #1E88E5;
-    border-radius: 8px;
-    padding: 15px;
-    box-shadow: 0 2px 5px rgba(0,0,0,0.05);
-    transition: transform 0.2s;
-    }
-    .driver-card:hover {
-    transform: translateY(-3px);
-    box-shadow: 0 4px 10px rgba(0,0,0,0.1);
-    }
-    .driver-card h4 {
-    margin: 0 0 12px 0;
-    color: #0D47A1;
-    font-size: 16px;
-    font-weight: bold;
-    border-bottom: 1px dashed #BBDEFB;
-    padding-bottom: 8px;
-    }
-    .driver-card p {
-    margin: 5px 0;
-    font-size: 14px;
-    color: #424242;
-    }
-    .highlight-text {
-    color: #1565C0;
-    font-weight: bold;
-    }
-    </style>
+# --- [Step 2: โค้ด CSS และ HTML] ---
+    css_style = """
+<style>
+.driver-grid-container { display: grid; grid-template-columns: repeat(2, 1fr); gap: 15px; margin-bottom: 25px; }
+.driver-card { background-color: #ffffff; border: 1px solid #E3F2FD; border-top: 4px solid #1E88E5; border-radius: 8px; padding: 15px; box-shadow: 0 2px 5px rgba(0,0,0,0.05); }
+.card-header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 1px dashed #BBDEFB; padding-bottom: 8px; margin-bottom: 12px; }
+.card-header h4 { margin: 0; color: #0D47A1; font-size: 16px; font-weight: bold; }
+.driver-card p { margin: 5px 0; font-size: 14px; color: #424242; }
+.highlight-text { color: #1565C0; font-weight: bold; }
+.status-badge { text-align: center; font-size: 12px; padding: 4px 10px; border-radius: 20px; font-weight: bold; min-width: 85px; }
+.status-free { background-color: #E8F5E9; color: #2E7D32; border: 1px solid #A5D6A7; }
+.status-busy { background-color: #FFEBEE; color: #C62828; border: 1px solid #EF9A9A; }
+.status-time { font-size: 11px; margin-top: 3px; font-weight: normal; }
+</style>
+"""
 
-    <div class="driver-grid-container">
-    <div class="driver-card">
-    <h4>🚗 Civic <span style="color:#666; font-size:14px;">(ตุ้ม)</span></h4>
-    <p><b>ทะเบียน:</b> 5ขฬ-4317-กทม</p>
-    <p><b>ประเภท:</b> รถรับ-ส่ง คุณคะโต้</p>
-    <p><b>คนขับ:</b> ตุ้ม (Tum)</p>
-    <p><b>โทร:</b> <span class="highlight-text">098-8388055</span></p>
+    html_content = f"""
+<div class="driver-grid-container">
+<div class="driver-card">
+    <div class="card-header">
+        <h4>🚗 Civic <span style="color:#666; font-size:14px;">(ตุ้ม)</span></h4>
+        <div class="status-badge {car_status['Civic (ตุ้ม)']['class']}">
+            <div>{car_status['Civic (ตุ้ม)']['text']}</div>
+            <div class="status-time">{car_status['Civic (ตุ้ม)']['time']}</div>
+        </div>
     </div>
-
-    <div class="driver-card">
-    <h4>🚗 Civic <span style="color:#666; font-size:14px;">(บอล)</span></h4>
-    <p><b>ทะเบียน:</b> 5ขฬ-7680-กทม</p>
-    <p><b>ประเภท:</b> รถรับ-ส่ง คุณเคตะ</p>
-    <p><b>คนขับ:</b> บอล (Ball)</p>
-    <p><b>โทร:</b> <span class="highlight-text">063-9305458</span></p>
+    <p><b>ทะเบียน:</b> 5ขฬ-4317-กทม</p><p><b>โทร:</b> <span class="highlight-text">098-8388055</span></p>
+</div>
+<div class="driver-card">
+    <div class="card-header">
+        <h4>🚗 Civic <span style="color:#666; font-size:14px;">(บอล)</span></h4>
+        <div class="status-badge {car_status['Civic (บอล)']['class']}">
+            <div>{car_status['Civic (บอล)']['text']}</div>
+            <div class="status-time">{car_status['Civic (บอล)']['time']}</div>
+        </div>
     </div>
-
-    <div class="driver-card">
-    <h4>🚙 Camry <span style="color:#666; font-size:14px;">(เนก)</span></h4>
-    <p><b>ทะเบียน:</b> 6ขข-4068-กทม</p>
-    <p><b>ประเภท:</b> รถรับ-ส่ง MD</p>
-    <p><b>คนขับ:</b> เนก (Anek)</p>
-    <p><b>โทร:</b> <span class="highlight-text">081-0402527</span></p>
+    <p><b>ทะเบียน:</b> 5ขฬ-7680-กทม</p><p><b>โทร:</b> <span class="highlight-text">063-9305458</span></p>
+</div>
+<div class="driver-card">
+    <div class="card-header">
+        <h4>🚙 Camry <span style="color:#666; font-size:14px;">(เนก)</span></h4>
+        <div class="status-badge {car_status['Camry (เนก)']['class']}">
+            <div>{car_status['Camry (เนก)']['text']}</div>
+            <div class="status-time">{car_status['Camry (เนก)']['time']}</div>
+        </div>
     </div>
-
-    <div class="driver-card">
-    <h4>🚙 MG-EP</h4>
-    <p><b>ทะเบียน:</b> 5ขก-7378-กทม</p>
-    <p><b>ประเภท:</b> -</p>
-    <p><b>คนขับ:</b> -</p>
-    <p><b>โทร:</b> <span style="color:#9E9E9E;">-</span></p>
+    <p><b>ทะเบียน:</b> 6ขข-4068-กทม</p><p><b>โทร:</b> <span class="highlight-text">081-0402527</span></p>
+</div>
+<div class="driver-card">
+    <div class="card-header">
+        <h4>🚙 MG-EP</h4>
+        <div class="status-badge {car_status['MG']['class']}">
+            <div>{car_status['MG']['text']}</div>
+            <div class="status-time">{car_status['MG']['time']}</div>
+        </div>
     </div>
-    </div>
-    """
-    st.markdown(html_cards, unsafe_allow_html=True)
-    # ---------------------------------------------
+    <p><b>ทะเบียน:</b> 5ขก-7378-กทม</p><p><b>โทร:</b> <span style="color:#9E9E9E;">-</span></p>
+</div>
+</div>
+"""
+    # --- [Step 3: สั่งแสดงผล UI] ---
+    st.markdown(css_style + html_content, unsafe_allow_html=True)
     
     # --- [FIXED: แก้ไข Logic การนับรายการวันนี้] ---
     now_dt = datetime.now()
