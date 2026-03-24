@@ -168,7 +168,7 @@ if choice == "📝 จองใหม่":
     <div class="driver-grid-container">
     <div class="driver-card">
     <h4>🚗 Civic <span style="color:#666; font-size:14px;">(ตุ้ม)</span></h4>
-    <p><b>ทะเบียน:</b> 5ขฬ 4317 / กทม</p>
+    <p><b>ทะเบียน:</b> 5ขฬ-4317-กทม</p>
     <p><b>ประเภท:</b> รถรับ-ส่ง คุณคะโต้</p>
     <p><b>คนขับ:</b> ตุ้ม (Tum)</p>
     <p><b>โทร:</b> <span class="highlight-text">098-8388055</span></p>
