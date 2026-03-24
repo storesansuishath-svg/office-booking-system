@@ -5,6 +5,7 @@ from datetime import datetime, timedelta
 import requests
 import json
 import io
+import time
 
 # ==========================================
 # 1. การเชื่อมต่อ DATABASE & CONFIG
@@ -187,6 +188,7 @@ if choice == "📝 จองใหม่":
                     send_line_notification(resp.data[0]['id'], res, name, dept, ts, te, reason, dest)
                     st.success("✅ ส่งคำขอเรียบร้อย! โปรดรอ Admin อนุมัติ")
                     st.balloons()
+                    time.sleep(2)
                     st.rerun()
 
 # ==========================================
