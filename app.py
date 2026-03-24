@@ -123,16 +123,13 @@ choice = st.sidebar.selectbox("เมนูจัดการระบบ", menu
 if choice == "📝 จองใหม่":
     st.markdown('<div class="main-title">ระบบจองรถยนต์และห้องประชุม Online</div>', unsafe_allow_html=True)
     st.markdown('##### 📋 ข้อมูลรถและคนขับ')
-    # --- [Step 1: คำนวณสถานะ Real-time] ---
-    now_dt = datetime.now()
-    t_today_start = now_dt.replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
-    t_today_end = now_dt.replace(hour=23, minute=59, second=59, microsecond=999999).isoformat()
+# --- [Step 1: คำนวณสถานะ Real-time] ---
+    now_dt = datetime.now() # เวลาปัจจุบันเป๊ะๆ
     
-    today_bookings = supabase.table("bookings") \
+    # ดึงคิวจองที่ "อนุมัติแล้ว" ทั้งหมดมาเช็ค (ไม่ต้องกรองแค่วันนี้ เผื่อมีการจองข้ามวัน)
+    all_approved_bookings = supabase.table("bookings") \
         .select("resource, start_time, end_time") \
         .eq("status", "Approved") \
-        .gte("start_time", t_today_start) \
-        .lte("start_time", t_today_end) \
         .execute()
         
     car_status = {
@@ -142,15 +139,17 @@ if choice == "📝 จองใหม่":
         "MG": {"text": "🟢 ปัจจุบันว่าง", "time": "", "class": "status-free"}
     }
     
-    if today_bookings.data:
-        for b in today_bookings.data:
+    if all_approved_bookings.data:
+        for b in all_approved_bookings.data:
             res_name = b['resource']
             key = "MG" if "MG" in res_name else res_name
             
             if key in car_status:
-                st_dt = pd.to_datetime(b['start_time']).replace(tzinfo=None)
-                en_dt = pd.to_datetime(b['end_time']).replace(tzinfo=None)
+                # แปลงเวลาจาก Database เป็น datetime และตัด Timezone ทิ้งเพื่อเทียบกับ now_dt ได้ตรงๆ
+                st_dt = pd.to_datetime(b['start_time']).tz_localize(None) 
+                en_dt = pd.to_datetime(b['end_time']).tz_localize(None)
                 
+                # เช็คว่า เวลาปัจจุบัน (now_dt) ตกอยู่ระหว่าง เวลาเริ่ม และ เวลาจบ หรือไม่
                 if st_dt <= now_dt <= en_dt:
                     car_status[key]["text"] = "🔴 ไม่ว่าง"
                     car_status[key]["time"] = f"{st_dt.strftime('%H:%M')} - {en_dt.strftime('%H:%M')}"
