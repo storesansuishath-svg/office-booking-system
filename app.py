@@ -141,140 +141,81 @@ if choice == "📝 จองใหม่":
         "Camry (เนก)": {"text": "🟢 ปัจจุบันว่าง", "time": "", "class": "status-free"},
         "MG": {"text": "🟢 ปัจจุบันว่าง", "time": "", "class": "status-free"}
     }
-
-    room_status = {
-        "ห้องชั้น 1 (ห้องใหญ่)": {"text": "🟢 ปัจจุบันว่าง", "time": "", "class": "status-free"},
-        "ห้องชั้น 2": {"text": "🟢 ปัจจุบันว่าง", "time": "", "class": "status-free"},
-        "ห้อง VIP": {"text": "🟢 ปัจจุบันว่าง", "time": "", "class": "status-free"},
-        "ห้องชั้นลอย": {"text": "🟢 ปัจจุบันว่าง", "time": "", "class": "status-free"},
-        "ห้อง Production": {"text": "🟢 ปัจจุบันว่าง", "time": "", "class": "status-free"}
-    }
-
+    
     if today_bookings.data:
         for b in today_bookings.data:
             res_name = b['resource']
             key = "MG" if "MG" in res_name else res_name
             
-            st_dt = pd.to_datetime(b['start_time']).tz_localize(None)
-            en_dt = pd.to_datetime(b['end_time']).tz_localize(None)
-            
-            if st_dt <= now_dt <= en_dt:
-                if key in car_status:
+            if key in car_status:
+                st_dt = pd.to_datetime(b['start_time']).replace(tzinfo=None)
+                en_dt = pd.to_datetime(b['end_time']).replace(tzinfo=None)
+                
+                if st_dt <= now_dt <= en_dt:
                     car_status[key]["text"] = "🔴 ไม่ว่าง"
                     car_status[key]["time"] = f"{st_dt.strftime('%H:%M')} - {en_dt.strftime('%H:%M')}"
                     car_status[key]["class"] = "status-busy"
-                elif key in room_status:
-                    room_status[key]["text"] = "🔴 ไม่ว่าง"
-                    room_status[key]["time"] = f"{st_dt.strftime('%H:%M')} - {en_dt.strftime('%H:%M')}"
-                    room_status[key]["class"] = "status-busy"
 
 # --- [Step 2: โค้ด CSS และ HTML] ---
     css_style = """
-    <style>
-    /* CSS รถยนต์ */
-    .driver-grid-container { display: grid; grid-template-columns: repeat(2, 1fr); gap: 15px; margin-bottom: 25px; }
-    .driver-card { background-color: #ffffff; border: 1px solid #E3F2FD; border-top: 4px solid #1E88E5; border-radius: 8px; padding: 15px; box-shadow: 0 2px 5px rgba(0,0,0,0.05); }
-    .card-header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 1px dashed #BBDEFB; padding-bottom: 8px; margin-bottom: 12px; }
-    .card-header h4 { margin: 0; color: #0D47A1; font-size: 16px; font-weight: bold; }
-    .driver-card p { margin: 5px 0; font-size: 14px; color: #424242; }
-    .highlight-text { color: #1565C0; font-weight: bold; }
-
-    /* CSS ห้องประชุม */
-    .room-flex-container { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 25px; }
-    .room-badge-wrapper { background-color: #ffffff; border: 1px solid #F3E5F5; border-left: 4px solid #8E24AA; border-radius: 8px; padding: 10px; display: flex; flex-direction: column; align-items: center; justify-content: center; min-width: 150px; flex: 1; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
-    .room-name { font-size: 13px; font-weight: bold; color: #4A148C; margin-bottom: 6px; text-align: center; }
-
-    /* CSS ป้ายสถานะร่วม */
-    .status-badge { text-align: center; font-size: 12px; padding: 4px 10px; border-radius: 20px; font-weight: bold; min-width: 85px; }
-    .status-free { background-color: #E8F5E9; color: #2E7D32; border: 1px solid #A5D6A7; }
-    .status-busy { background-color: #FFEBEE; color: #C62828; border: 1px solid #EF9A9A; }
-    .status-time { font-size: 11px; margin-top: 3px; font-weight: normal; }
-    </style>
-    """
+<style>
+.driver-grid-container { display: grid; grid-template-columns: repeat(2, 1fr); gap: 15px; margin-bottom: 25px; }
+.driver-card { background-color: #ffffff; border: 1px solid #E3F2FD; border-top: 4px solid #1E88E5; border-radius: 8px; padding: 15px; box-shadow: 0 2px 5px rgba(0,0,0,0.05); }
+.card-header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 1px dashed #BBDEFB; padding-bottom: 8px; margin-bottom: 12px; }
+.card-header h4 { margin: 0; color: #0D47A1; font-size: 16px; font-weight: bold; }
+.driver-card p { margin: 5px 0; font-size: 14px; color: #424242; }
+.highlight-text { color: #1565C0; font-weight: bold; }
+.status-badge { text-align: center; font-size: 12px; padding: 4px 10px; border-radius: 20px; font-weight: bold; min-width: 85px; }
+.status-free { background-color: #E8F5E9; color: #2E7D32; border: 1px solid #A5D6A7; }
+.status-busy { background-color: #FFEBEE; color: #C62828; border: 1px solid #EF9A9A; }
+.status-time { font-size: 11px; margin-top: 3px; font-weight: normal; }
+</style>
+"""
 
     html_content = f"""
-    <div class="driver-grid-container">
-    <div class="driver-card">
-        <div class="card-header">
-            <h4>🚗 Civic <span style="color:#666; font-size:14px;">(ตุ้ม)</span></h4>
-            <div class="status-badge {car_status['Civic (ตุ้ม)']['class']}">
-                <div>{car_status['Civic (ตุ้ม)']['text']}</div>
-                <div class="status-time">{car_status['Civic (ตุ้ม)']['time']}</div>
-            </div>
-        </div>
-        <p><b>ทะเบียน:</b> 5ขฬ-4317-กทม</p><p><b>โทร:</b> <span class="highlight-text">098-8388055</span></p>
-    </div>
-    <div class="driver-card">
-        <div class="card-header">
-            <h4>🚗 Civic <span style="color:#666; font-size:14px;">(บอล)</span></h4>
-            <div class="status-badge {car_status['Civic (บอล)']['class']}">
-                <div>{car_status['Civic (บอล)']['text']}</div>
-                <div class="status-time">{car_status['Civic (บอล)']['time']}</div>
-            </div>
-        </div>
-        <p><b>ทะเบียน:</b> 5ขฬ-7680-กทม</p><p><b>โทร:</b> <span class="highlight-text">063-9305458</span></p>
-    </div>
-    <div class="driver-card">
-        <div class="card-header">
-            <h4>🚙 Camry <span style="color:#666; font-size:14px;">(เนก)</span></h4>
-            <div class="status-badge {car_status['Camry (เนก)']['class']}">
-                <div>{car_status['Camry (เนก)']['text']}</div>
-                <div class="status-time">{car_status['Camry (เนก)']['time']}</div>
-            </div>
-        </div>
-        <p><b>ทะเบียน:</b> 6ขข-4068-กทม</p><p><b>โทร:</b> <span class="highlight-text">081-0402527</span></p>
-    </div>
-    <div class="driver-card">
-        <div class="card-header">
-            <h4>🚙 MG-EP</h4>
-            <div class="status-badge {car_status['MG']['class']}">
-                <div>{car_status['MG']['text']}</div>
-                <div class="status-time">{car_status['MG']['time']}</div>
-            </div>
-        </div>
-        <p><b>ทะเบียน:</b> 5ขก-7378-กทม</p><p><b>โทร:</b> <span style="color:#9E9E9E;">-</span></p>
-    </div>
-    </div>
-
-    <h5 style="margin-top: 20px;">🏢 สถานะห้องประชุม</h5>
-    <div class="room-flex-container">
-    <div class="room-badge-wrapper">
-        <div class="room-name">ห้องชั้น 1 (ห้องใหญ่)</div>
-        <div class="status-badge {room_status['ห้องชั้น 1 (ห้องใหญ่)']['class']}">
-            <div>{room_status['ห้องชั้น 1 (ห้องใหญ่)']['text']}</div>
-            <div class="status-time">{room_status['ห้องชั้น 1 (ห้องใหญ่)']['time']}</div>
+<div class="driver-grid-container">
+<div class="driver-card">
+    <div class="card-header">
+        <h4>🚗 Civic <span style="color:#666; font-size:14px;">(ตุ้ม)</span></h4>
+        <div class="status-badge {car_status['Civic (ตุ้ม)']['class']}">
+            <div>{car_status['Civic (ตุ้ม)']['text']}</div>
+            <div class="status-time">{car_status['Civic (ตุ้ม)']['time']}</div>
         </div>
     </div>
-    <div class="room-badge-wrapper">
-        <div class="room-name">ห้องชั้น 2</div>
-        <div class="status-badge {room_status['ห้องชั้น 2']['class']}">
-            <div>{room_status['ห้องชั้น 2']['text']}</div>
-            <div class="status-time">{room_status['ห้องชั้น 2']['time']}</div>
+    <p><b>ทะเบียน:</b> 5ขฬ-4317-กทม</p><p><b>โทร:</b> <span class="highlight-text">098-8388055</span></p>
+</div>
+<div class="driver-card">
+    <div class="card-header">
+        <h4>🚗 Civic <span style="color:#666; font-size:14px;">(บอล)</span></h4>
+        <div class="status-badge {car_status['Civic (บอล)']['class']}">
+            <div>{car_status['Civic (บอล)']['text']}</div>
+            <div class="status-time">{car_status['Civic (บอล)']['time']}</div>
         </div>
     </div>
-    <div class="room-badge-wrapper">
-        <div class="room-name">ห้อง VIP</div>
-        <div class="status-badge {room_status['ห้อง VIP']['class']}">
-            <div>{room_status['ห้อง VIP']['text']}</div>
-            <div class="status-time">{room_status['ห้อง VIP']['time']}</div>
+    <p><b>ทะเบียน:</b> 5ขฬ-7680-กทม</p><p><b>โทร:</b> <span class="highlight-text">063-9305458</span></p>
+</div>
+<div class="driver-card">
+    <div class="card-header">
+        <h4>🚙 Camry <span style="color:#666; font-size:14px;">(เนก)</span></h4>
+        <div class="status-badge {car_status['Camry (เนก)']['class']}">
+            <div>{car_status['Camry (เนก)']['text']}</div>
+            <div class="status-time">{car_status['Camry (เนก)']['time']}</div>
         </div>
     </div>
-    <div class="room-badge-wrapper">
-        <div class="room-name">ห้องชั้นลอย</div>
-        <div class="status-badge {room_status['ห้องชั้นลอย']['class']}">
-            <div>{room_status['ห้องชั้นลอย']['text']}</div>
-            <div class="status-time">{room_status['ห้องชั้นลอย']['time']}</div>
+    <p><b>ทะเบียน:</b> 6ขข-4068-กทม</p><p><b>โทร:</b> <span class="highlight-text">081-0402527</span></p>
+</div>
+<div class="driver-card">
+    <div class="card-header">
+        <h4>🚙 MG-EP</h4>
+        <div class="status-badge {car_status['MG']['class']}">
+            <div>{car_status['MG']['text']}</div>
+            <div class="status-time">{car_status['MG']['time']}</div>
         </div>
     </div>
-    <div class="room-badge-wrapper">
-        <div class="room-name">ห้อง Production</div>
-        <div class="status-badge {room_status['ห้อง Production']['class']}">
-            <div>{room_status['ห้อง Production']['text']}</div>
-            <div class="status-time">{room_status['ห้อง Production']['time']}</div>
-        </div>
-    </div>
-    </div>
-    """
+    <p><b>ทะเบียน:</b> 5ขก-7378-กทม</p><p><b>โทร:</b> <span style="color:#9E9E9E;">-</span></p>
+</div>
+</div>
+"""
     # --- [Step 3: สั่งแสดงผล UI] ---
     st.markdown(css_style + html_content, unsafe_allow_html=True)
     
