@@ -3,4 +3,3 @@ pandas
 supabase
 requests
 xlsxwriter
-streamlit-autorefresh
