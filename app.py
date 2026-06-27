@@ -100,44 +100,7 @@ def auto_delete_old_bookings():
     except: pass
 
 # ==========================================
-# 3. ฟังก์ชันประเมิน (ASSESSMENT FUNCTIONS)
-# ==========================================
-
-def get_assessment_statistics(resource):
-    """ดึงสถิติการประเมินของทรัพยากร (ค่าเฉลี่ยและ %)"""
-    try:
-        res = supabase.table("assessments") \
-            .select("q1_body_readiness, q2_vehicle_readiness, q3_driving_safety, q4_behavior") \
-            .eq("resource", resource) \
-            .execute()
-        
-        if not res.data:
-            return None
-        
-        q1_scores = [float(item['q1_body_readiness']) for item in res.data]
-        q2_scores = [float(item['q2_vehicle_readiness']) for item in res.data]
-        q3_scores = [float(item['q3_driving_safety']) for item in res.data]
-        q4_scores = [float(item['q4_behavior']) for item in res.data]
-        
-        stats = {
-            "count": len(res.data),
-            "q1_avg": round(sum(q1_scores) / len(q1_scores), 2) if q1_scores else 0,
-            "q1_pct": round((sum(q1_scores) / len(q1_scores) / 5) * 100, 1) if q1_scores else 0,
-            "q2_avg": round(sum(q2_scores) / len(q2_scores), 2) if q2_scores else 0,
-            "q2_pct": round((sum(q2_scores) / len(q2_scores) / 5) * 100, 1) if q2_scores else 0,
-            "q3_avg": round(sum(q3_scores) / len(q3_scores), 2) if q3_scores else 0,
-            "q3_pct": round((sum(q3_scores) / len(q3_scores) / 5) * 100, 1) if q3_scores else 0,
-            "q4_avg": round(sum(q4_scores) / len(q4_scores), 2) if q4_scores else 0,
-            "q4_pct": round((sum(q4_scores) / len(q4_scores) / 5) * 100, 1) if q4_scores else 0,
-            "overall_avg": round((sum(q1_scores) + sum(q2_scores) + sum(q3_scores) + sum(q4_scores)) / (len(res.data) * 4), 2),
-            "overall_pct": round(((sum(q1_scores) + sum(q2_scores) + sum(q3_scores) + sum(q4_scores)) / (len(res.data) * 4)) / 5 * 100, 1)
-        }
-        return stats
-    except:
-        return None
-
-# ==========================================
-# 4. SIDEBAR & NAVIGATION
+# 3. SIDEBAR & NAVIGATION
 # ==========================================
 auto_delete_old_bookings()
 pending_items = supabase.table("bookings").select("id").eq("status", "Pending").execute().data
@@ -151,11 +114,12 @@ if pending_count > 0:
     st.sidebar.markdown(f'<p class="blink">📢 มีรายการรออนุมัติ: {pending_count}</p>', unsafe_allow_html=True)
 
 st.sidebar.markdown("---")
-menu = ["📝 จองใหม่", "📅 ตารางงาน (Real-time)", "🧑‍💼 ประเมินพนักงานขับรถ", "🔑 Admin (อนุมัติ)", "📊 รายงานประจำเดือน"]
+# เพิ่มเมนู ⭐ ประเมินการใช้งาน เข้าไป
+menu = ["📝 จองใหม่", "📅 ตารางงาน (Real-time)", "⭐ ประเมินการใช้งาน", "🔑 Admin (อนุมัติ)", "📊 รายงานประจำเดือน"]
 choice = st.sidebar.selectbox("เมนูจัดการระบบ", menu)
 
 # ==========================================
-# 4. หน้าจองใหม่ (BOOKING) - [แก้ไข Logic วันนี้]
+# 4. หน้าจองใหม่ (BOOKING)
 # ==========================================
 if choice == "📝 จองใหม่":
     st.markdown('<div class="main-title">ระบบจองรถยนต์และห้องประชุม Online</div>', unsafe_allow_html=True)
@@ -315,12 +279,10 @@ if choice == "📝 จองใหม่":
     # --- [Step 3: สั่งแสดงผล UI] ---
     st.markdown(css_style + html_content, unsafe_allow_html=True)
     
-    # --- [FIXED: แก้ไข Logic การนับรายการวันนี้] ---
     now_dt = datetime.utcnow() + timedelta(hours=7)
     t_today_start = (datetime.utcnow() + timedelta(hours=7)).replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
     t_today_end = now_dt.replace(hour=23, minute=59, second=59, microsecond=999999).isoformat()
     
-    # นับเฉพาะรายการที่ "เริ่ม" ภายในวันนี้เท่านั้น
     today_approved_res = supabase.table("bookings") \
         .select("id") \
         .eq("status", "Approved") \
@@ -345,9 +307,13 @@ if choice == "📝 จองใหม่":
         name = st.text_input("ชื่อผู้จอง")
         phone = st.text_input("เบอร์โทรศัพท์")
         
-        # รายการแผนก
-        departments = ["AC", "HR", "Sales", "QA", "PE", "Fac", "Loading", "Unload", "Coating", "Repair", "Delivery", "Assembly", "QC - MS", "Metal sheet", "Factory 1", "Factory 2", "Admin (JP)"]
-        dept = st.selectbox("เลือกแผนก", departments)
+        # แก้ไข: เปลี่ยนแผนกเป็น Dropdown ตามที่กำหนด 17 แผนก
+        dept_options = [
+            "AC", "HR", "Sales", "QA", "PE", "Fac", "Loading", "Unload", 
+            "Coating", "Repair", "Delivery", "Assembly", "QC - MS", 
+            "Metal sheet", "Factory 1", "Factory 2", "Admin (JP)"
+        ]
+        dept = st.selectbox("แผนก", dept_options)
 
     with col2:
         d_start = st.date_input("วันที่เริ่ม", datetime.now().date(), min_value=datetime.now().date())
@@ -366,18 +332,17 @@ if choice == "📝 จองใหม่":
     if st.button("ยืนยันการส่งคำขอจอง", use_container_width=True):
         if not name or not dept or ts is None:
             st.warning("⚠️ กรุณากรอกข้อมูลให้ครบถ้วน")
-        elif ts < datetime.now(): # 👈 เพิ่มจุดนี้: เช็คว่าเวลาเริ่มต้น (ts) น้อยกว่าเวลาปัจจุบันหรือไม่
+        elif ts < datetime.now(): 
             st.error("❌ ไม่สามารถจองย้อนหลังได้ กรุณาเลือกเวลาปัจจุบันหรือล่วงหน้า")
         elif ts >= te:
             st.error("❌ เวลาเริ่มต้องมาก่อนเวลาสิ้นสุด")
         else:
-            # รับค่า 3 ตัวแปร (เพิ่ม status_conf)
             is_conf, user_conf, status_conf = check_booking_conflict(res, ts.isoformat(), te.isoformat())
             if is_conf:
                 msg = "ถูกจองแล้ว" if status_conf == "Approved" else "มีคนกำลังรออนุมัติ"
                 st.error(f"❌ คิวชนกัน! {res} {msg} โดยคุณ {user_conf} ในเวลานี้")
             else:
-                data = {"resource": res, "requester": name, "phone": phone, "dept": dept, "start_time": ts.isoformat(), "end_time": te.isoformat(), "purpose": reason, "destination": dest, "status": "Pending", "has_assessment": False}
+                data = {"resource": res, "requester": name, "phone": phone, "dept": dept, "start_time": ts.isoformat(), "end_time": te.isoformat(), "purpose": reason, "destination": dest, "status": "Pending"}
                 resp = supabase.table("bookings").insert(data).execute()
                 if resp.data:
                     send_line_notification(resp.data[0]['id'], res, name, dept, ts, te, reason, dest)
@@ -387,7 +352,7 @@ if choice == "📝 จองใหม่":
                     st.rerun()
 
 # ==========================================
-# 5. หน้าตารางงาน - [แก้ไขให้โชว์รายการวันนี้ทั้งหมด]
+# 5. หน้าตารางงาน 
 # ==========================================
 elif choice == "📅 ตารางงาน (Real-time)":
     st.subheader("📅 ตารางการใช้งานปัจจุบันและล่วงหน้า")
@@ -396,7 +361,6 @@ elif choice == "📅 ตารางงาน (Real-time)":
     search_q = f_c1.text_input("🔍 ค้นหาชื่อผู้จอง / สถานที่")
     view_cat = f_c2.selectbox("กรองตามประเภท", ["ทั้งหมด", "รถยนต์", "ห้องประชุม"])
     
-    # --- [FIXED: เปลี่ยนจากเช็คเวลาปัจจุบัน เป็นเช็คตั้งแต่เริ่มวันนี้ 00:00 น.] ---
     t_today_start = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
     
     db_res = supabase.table("bookings") \
@@ -473,6 +437,77 @@ elif choice == "📅 ตารางงาน (Real-time)":
                         else: st.error("รหัสผ่านไม่ถูกต้อง")
 
 # ==========================================
+# (ใหม่) เมนู ⭐ ประเมินการใช้งาน
+# ==========================================
+elif choice == "⭐ ประเมินการใช้งาน":
+    st.subheader("⭐ ประเมินการปฏิบัติงานพนักงานขับรถ")
+    
+    # ดึงเวลาปัจจุบัน (UTC+7)
+    now_iso = (datetime.utcnow() + timedelta(hours=7)).isoformat()
+    car_list = ["Civic (ตุ้ม)", "Civic (บอล)", "Camry (เนก)", "MG", "MG (เนก)"]
+    
+    try:
+        # ค้นหารายการที่: 1. อนุมัติแล้ว 2. เป็นรถยนต์ 3. เวลาสิ้นสุดผ่านไปแล้ว (จบการจอง)
+        res = supabase.table("bookings").select("*").eq("status", "Approved").in_("resource", car_list).lt("end_time", now_iso).execute()
+        data = res.data
+        
+        # กรองเฉพาะรายการที่ยังไม่ได้ประเมิน
+        unrated = [d for d in data if not d.get("is_rated")]
+        
+        if not unrated:
+            st.success("🎉 ไม่มีรายการที่ต้องประเมินในขณะนี้ครับ ทุกรายการได้รับการให้คะแนนครบถ้วนแล้ว")
+        else:
+            st.info("💡 กรุณาเลือกรายการจองรถยนต์ที่เพิ่งใช้งานเสร็จสิ้นเพื่อทำการประเมินพนักงานขับรถ")
+            
+            # จัดทำ Option ให้อ่านง่าย: ว/ด/ป | ทรัพยากร | ชื่อผู้จอง
+            options_dict = {}
+            for d in sorted(unrated, key=lambda x: x['end_time'], reverse=True): # เรียงจากใหม่ไปเก่า
+                end_dt_str = pd.to_datetime(d['end_time']).strftime('%d/%m/%Y %H:%M')
+                label = f"วันที่ใช้งาน: {end_dt_str} | รถ: {d['resource']} | ผู้จอง: {d['requester']}"
+                options_dict[label] = d
+                
+            selected_label = st.selectbox("เลือกรถที่ต้องการประเมิน", list(options_dict.keys()))
+            selected_booking = options_dict[selected_label]
+            
+            st.markdown("---")
+            st.markdown(f"กำลังประเมินพนักงานขับรถสำหรับรายการ **{selected_booking['resource']}**")
+            
+            with st.form("rating_form"):
+                st.write("**หัวข้อประเมิน (1 = ต้องปรับปรุง, 5 = ดีมาก)**")
+                
+                q1 = st.radio("พนักงานขับรถมีสภาพร่างกายพร้อมปฏิบัติงาน", [1, 2, 3, 4, 5], index=4, horizontal=True)
+                q2 = st.radio("สภาพรถพร้อมใช้งานมีความสะอาดและปลอดภัย", [1, 2, 3, 4, 5], index=4, horizontal=True)
+                q3 = st.radio("ขับรถด้วยความระมัดระวังและปลอดภัย", [1, 2, 3, 4, 5], index=4, horizontal=True)
+                q4 = st.radio("กิริยาวาจาและพฤติกรรมมีความเหมาะสม", [1, 2, 3, 4, 5], index=4, horizontal=True)
+                
+                suggestion = st.text_area("ข้อเสนอแนะอื่นๆ")
+                
+                st.warning("⚠️ โปรดตรวจสอบข้อมูลให้ครบถ้วนก่อนส่ง (ไม่สามารถแก้ไขข้อมูลได้ภายหลังการให้คะแนน)")
+                confirm = st.checkbox("แน่ใจ / ยืนยันข้อมูล (หากต้องการแก้ไขให้แก้ไขก่อนติ๊กถูกช่องนี้)")
+                
+                if st.form_submit_button("ส่งผลการประเมิน", type="primary"):
+                    if not confirm:
+                        st.error("❌ กรุณากดยืนยัน (ติ๊กถูกที่ช่อง แน่ใจ / ยืนยันข้อมูล) ก่อนส่งผลประเมินครับ")
+                    else:
+                        try:
+                            supabase.table("bookings").update({
+                                "is_rated": True,
+                                "q1": q1,
+                                "q2": q2,
+                                "q3": q3,
+                                "q4": q4,
+                                "suggestion": suggestion
+                            }).eq("id", selected_booking['id']).execute()
+                            
+                            st.success("✅ บันทึกผลการประเมินเรียบร้อยแล้ว ขอบคุณที่ใช้บริการครับ!")
+                            time.sleep(2)
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"เกิดข้อผิดพลาดในการบันทึกข้อมูล: {e} \n(แจ้ง Admin ให้ตรวจสอบ Column ใน Database)")
+    except Exception as e:
+        st.error(f"ไม่สามารถเชื่อมต่อฐานข้อมูลประเมินได้: {e}")
+
+# ==========================================
 # 6. หน้า ADMIN (APPROVAL)
 # ==========================================
 elif choice == "🔑 Admin (อนุมัติ)":
@@ -505,142 +540,10 @@ elif choice == "🔑 Admin (อนุมัติ)":
                         supabase.table("bookings").delete().eq("id", item['id']).execute(); st.rerun()
 
 # ==========================================
-# 6. หน้าประเมินพนักงานขับรถ (ASSESSMENT)
-# ==========================================
-elif choice == "🧑‍💼 ประเมินพนักงานขับรถ":
-    st.subheader("🧑‍💼 ระบบประเมินพนักงานขับรถ")
-    st.markdown("**หลังจากการใช้บริการเสร็จสิ้น กรุณาประเมินพนักงานขับรถและสภาพรถยนต์**")
-    
-    st.markdown("---")
-    
-    # ดึงรายการจองที่เสร็จสิ้นแล้ว (เวลา >= end_time + 1 นาที) และยังไม่มีการประเมิน
-    now = datetime.now()
-    completed = supabase.table("bookings") \
-        .select("*") \
-        .eq("status", "Approved") \
-        .is_("has_assessment", False) \
-        .order("end_time", desc=True) \
-        .execute()
-    
-    pending_list = []
-    for item in completed.data:
-        end_time = pd.to_datetime(item['end_time']).replace(tzinfo=None)
-        time_diff = (now - end_time).total_seconds() / 60
-        if time_diff >= 1:
-            pending_list.append(item)
-    
-    if not pending_list:
-        st.info("✅ ไม่มีรายการที่รอการประเมิน")
-    else:
-        st.write(f"📋 มีรายการรอการประเมิน: **{len(pending_list)}** รายการ")
-        st.markdown("---")
-        
-        for booking in pending_list:
-            with st.container(border=True):
-                st.markdown(f"""
-                <div style="background-color: #F5F5F5; padding: 15px; border-radius: 10px; border-left: 4px solid #1E88E5; margin-bottom: 15px;">
-                <strong>📌 {booking['resource']}</strong> | 👤 {booking['requester']} | 📅 {pd.to_datetime(booking['start_time']).strftime('%d/%m/%Y %H:%M')} - {pd.to_datetime(booking['end_time']).strftime('%H:%M')}<br>
-                📍 {booking.get('destination', '-')} | 🎯 {booking.get('purpose', '-')}
-                </div>
-                """, unsafe_allow_html=True)
-                
-                with st.form(f"assessment_form_{booking['id']}"):
-                    st.write("**ประเมินตามเกณฑ์ด้านล่าง (1=ไม่พอใจ, 5=พอใจมาก):**")
-                    
-                    evaluator = st.text_input(
-                        "ชื่อผู้ประเมิน",
-                        value=booking['requester'],
-                        key=f"eval_{booking['id']}",
-                        label_visibility="collapsed"
-                    )
-                    
-                    st.markdown("**1. พนักงานขับรถมีสภาพร่างกายพร้อมปฏิบัติงาน**")
-                    q1 = st.selectbox(
-                        "เลือกคะแนน",
-                        [1, 2, 3, 4, 5],
-                        format_func=lambda x: f"{x} - {'ไม่พอใจ' if x == 1 else 'ต่ำกว่าคาด' if x == 2 else 'พอใจ' if x == 3 else 'ดี' if x == 4 else 'พอใจมาก'}",
-                        key=f"q1_{booking['id']}",
-                        label_visibility="collapsed"
-                    )
-                    
-                    st.markdown("**2. สภาพรถพร้อมใช้งาน ความสะอาด และปลอดภัย**")
-                    q2 = st.selectbox(
-                        "เลือกคะแนน",
-                        [1, 2, 3, 4, 5],
-                        format_func=lambda x: f"{x} - {'ไม่พอใจ' if x == 1 else 'ต่ำกว่าคาด' if x == 2 else 'พอใจ' if x == 3 else 'ดี' if x == 4 else 'พอใจมาก'}",
-                        key=f"q2_{booking['id']}",
-                        label_visibility="collapsed"
-                    )
-                    
-                    st.markdown("**3. ขับรถด้วยความระมัดระวังและปลอดภัย**")
-                    q3 = st.selectbox(
-                        "เลือกคะแนน",
-                        [1, 2, 3, 4, 5],
-                        format_func=lambda x: f"{x} - {'ไม่พอใจ' if x == 1 else 'ต่ำกว่าคาด' if x == 2 else 'พอใจ' if x == 3 else 'ดี' if x == 4 else 'พอใจมาก'}",
-                        key=f"q3_{booking['id']}",
-                        label_visibility="collapsed"
-                    )
-                    
-                    st.markdown("**4. กิริยาวาจาและพฤติกรรมมีความเหมาะสม**")
-                    q4 = st.selectbox(
-                        "เลือกคะแนน",
-                        [1, 2, 3, 4, 5],
-                        format_func=lambda x: f"{x} - {'ไม่พอใจ' if x == 1 else 'ต่ำกว่าคาด' if x == 2 else 'พอใจ' if x == 3 else 'ดี' if x == 4 else 'พอใจมาก'}",
-                        key=f"q4_{booking['id']}",
-                        label_visibility="collapsed"
-                    )
-                    
-                    st.markdown("**5. ข้อเสนอแนะอื่นๆ**")
-                    comments = st.text_area(
-                        "ความเห็นเพิ่มเติม (optional)",
-                        placeholder="เช่น ด้านการขับขี่, สภาพรถ, ท่าทาง ฯลฯ",
-                        key=f"comment_{booking['id']}",
-                        label_visibility="collapsed"
-                    )
-                    
-                    st.markdown(f"""
-                    <div style="background-color: #FFF3E0; padding: 12px; border-radius: 8px; border-left: 4px solid #FF9800; margin: 10px 0;">
-                    <strong>⚠️ สำคัญ:</strong> เมื่อบันทึกการประเมินแล้ว <strong>ไม่สามารถแก้ไขได้</strong> กรุณาตรวจสอบข้อมูลให้ถูกต้อง
-                    </div>
-                    """, unsafe_allow_html=True)
-                    
-                    col_btn1, col_btn2 = st.columns(2)
-                    
-                    if col_btn1.form_submit_button("✅ แน่ใจ - บันทึก", use_container_width=True):
-                        if not evaluator:
-                            st.error("❌ กรุณากรอกชื่อผู้ประเมิน")
-                        else:
-                            try:
-                                assessment_data = {
-                                    "booking_id": booking['id'],
-                                    "resource": booking['resource'],
-                                    "driver_name": booking['requester'],
-                                    "q1_body_readiness": q1,
-                                    "q2_vehicle_readiness": q2,
-                                    "q3_driving_safety": q3,
-                                    "q4_behavior": q4,
-                                    "comments": comments,
-                                    "evaluator_name": evaluator,
-                                    "created_at": datetime.now().isoformat()
-                                }
-                                supabase.table("assessments").insert(assessment_data).execute()
-                                supabase.table("bookings").update({"has_assessment": True}).eq("id", booking['id']).execute()
-                                st.success("✅ บันทึกการประเมินเรียบร้อย! ข้อมูลนี้ไม่สามารถแก้ไขได้")
-                                time.sleep(1)
-                                st.rerun()
-                            except Exception as e:
-                                st.error(f"❌ เกิดข้อผิดพลาด: {e}")
-                    
-                    if col_btn2.form_submit_button("❌ แก้ไข - ยกเลิก", use_container_width=True):
-                        st.info("ยกเลิกการประเมินครับ")
-            
-            st.markdown("---")
-
-# ==========================================
 # 7. หน้ารายงาน (REPORT)
 # ==========================================
 elif choice == "📊 รายงานประจำเดือน":
-    st.subheader("📊 รายงานสรุปการใช้ทรัพยากร")
+    st.subheader("📊 รายงานสรุปการใช้ทรัพยากรและการประเมิน")
     if st.text_input("รหัสผ่านรายงาน", type="password") == "s1234":
         data = supabase.table("bookings").select("*").eq("status", "Approved").execute().data
         if data:
@@ -657,15 +560,44 @@ elif choice == "📊 รายงานประจำเดือน":
             elif rep_type == "ห้องประชุม": f_df = f_df[f_df['resource'].str.contains("ห้อง", na=False)]
             
             f_df['เวลาเริ่ม'] = f_df['start_time'].dt.strftime('%d/%m/%Y %H:%M')
+            out_df = f_df[['resource', 'requester', 'dept', 'เวลาเริ่ม', 'destination', 'purpose']].copy()
             
-            # เพิ่มคะแนนเฉลี่ย
-            f_df['คะแนนรวม'] = f_df['resource'].apply(lambda x: get_assessment_statistics(x))
-            f_df['คะแนน'] = f_df['คะแนนรวม'].apply(lambda x: f"{x['overall_avg']}/5 ({x['overall_pct']}%)" if x else "ยังไม่มี")
+            # --- ส่วนการทำ % และแสดงผลคะแนนในหน้า Report ---
+            if 'is_rated' in f_df.columns:
+                out_df['ประเมิน'] = f_df['is_rated'].apply(lambda x: 'ใช่' if x == True else 'ยัง')
+                out_df['ร่างกาย'] = f_df.get('q1', '-')
+                out_df['ความสะอาด'] = f_df.get('q2', '-')
+                out_df['ขับปลอดภัย'] = f_df.get('q3', '-')
+                out_df['มารยาท'] = f_df.get('q4', '-')
+                out_df['ข้อเสนอแนะ'] = f_df.get('suggestion', '-')
+                
+                # แสดงค่าเฉลี่ยคะแนนเปอร์เซ็นต์ เฉพาะเมื่อเลือกดูทั้งหมดหรือรถยนต์
+                if rep_type in ["ทั้งหมด", "รถยนต์"]:
+                    st.markdown("---")
+                    st.markdown("#### ⭐ สรุปเปอร์เซ็นต์ความพึงพอใจพนักงานขับรถเฉลี่ย ประจำเดือน")
+                    rated_cars = f_df[(f_df['resource'].str.contains("Civic|Camry|MG", na=False)) & (f_df['is_rated'] == True)]
+                    
+                    if not rated_cars.empty:
+                        # คำนวณเป็นเปอร์เซ็นต์ (คะแนนเต็ม 5 คือ 100%)
+                        avg1 = (rated_cars['q1'].mean() / 5) * 100
+                        avg2 = (rated_cars['q2'].mean() / 5) * 100
+                        avg3 = (rated_cars['q3'].mean() / 5) * 100
+                        avg4 = (rated_cars['q4'].mean() / 5) * 100
+                        total_avg = (avg1 + avg2 + avg3 + avg4) / 4
+                        
+                        st.success(f"📈 ภาพรวมเฉลี่ยความพึงพอใจ: **{total_avg:.2f}%**")
+                        sc1, sc2, sc3, sc4 = st.columns(4)
+                        sc1.metric("1. สภาพร่างกาย", f"{avg1:.2f}%")
+                        sc2.metric("2. สภาพรถ/ความสะอาด", f"{avg2:.2f}%")
+                        sc3.metric("3. การขับรถปลอดภัย", f"{avg3:.2f}%")
+                        sc4.metric("4. มารยาท", f"{avg4:.2f}%")
+                    else:
+                        st.info("ยังไม่มีข้อมูลการประเมินในเดือนที่เลือก")
             
-            out_df = f_df[['resource', 'requester', 'dept', 'เวลาเริ่ม', 'destination', 'purpose', 'คะแนน']]
+            st.markdown("---")
             st.dataframe(out_df, use_container_width=True)
             
             buf = io.BytesIO()
             with pd.ExcelWriter(buf, engine='xlsxwriter') as w:
                 out_df.to_excel(w, index=False)
-            st.download_button("📥 ดาวน์โหลดรายงาน (Excel)", buf.getvalue(), f"Report_{rep_type}_{sel_m}.xlsx")
+            st.download_button("📥 ดาวน์โหลดรายงาน (Excel)", buf.getvalue(), f"Report_{rep_type}_{sel_m.replace('/', '-')}.xlsx")
