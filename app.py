@@ -3,9 +3,8 @@ import pandas as pd
 from supabase import create_client
 from datetime import datetime, timedelta
 import requests
-import json
-import io
 import time
+import io
 
 # ==========================================
 # 1. การเชื่อมต่อ DATABASE & CONFIG
@@ -28,71 +27,69 @@ st.markdown("""
     }
     .main-title { font-size: 35px; font-weight: bold; color: #1E88E5; text-align: center; margin-bottom: 20px;}
     
-    /* ปุ่ม link_button ใน sidebar */
     [data-testid="stLinkButton"] a {
-        background-color: #8BC34A !important;
-        color: white !important;
-        border-radius: 8px !important;
-        font-weight: bold !important;
-        border: none !important;
-        text-align: center !important;
+        background-color: #8BC34A !important; color: white !important;
+        border-radius: 8px !important; font-weight: bold !important;
+        border: none !important; text-align: center !important;
     }
-    /* hover */
     [data-testid="stLinkButton"] a:hover { background-color: #4CAF50 !important; }
-    /* click */
     [data-testid="stLinkButton"] a:active { background-color: #2E7D32 !important; }
     </style>
 """, unsafe_allow_html=True)
 
 # ==========================================
-# 2. ฟังก์ชันหลัก (CORE FUNCTIONS)
+# 2. ฟังก์ชันหลัก (CORE FUNCTIONS) & ตั้งค่าระบบ
 # ==========================================
+def load_settings():
+    res = supabase.table("app_settings").select("*").execute()
+    if not res.data:
+        default_data = {
+            "id": 1,
+            "line_token": "**",
+            "line_secret": "**",
+            "group_id": "Cad74a32468ca40051bd7071a6064660d",
+            "car_list": "Civic (ตุ้ม),Civic (บอล),Camry (เนก),MG,MG (เนก)",
+            "room_list": "ห้องชั้น 1 (ห้องใหญ่),ห้องชั้น 2,ห้อง VIP,ห้องชั้นลอย,ห้อง Production",
+            "dept_list": "AC,HR,Sales,QA,PE,Fac,Loading,Unload,Coating,Repair,Delivery,Assembly,QC - MS,Metal sheet,Factory 1,Factory 2,Admin (JP)"
+        }
+        supabase.table("app_settings").insert(default_data).execute()
+        return default_data
+    return res.data[0]
+
+sys_settings = load_settings()
+SYS_CARS = [x.strip() for x in sys_settings['car_list'].split(',') if x.strip()]
+SYS_ROOMS = [x.strip() for x in sys_settings['room_list'].split(',') if x.strip()]
+SYS_DEPTS = [x.strip() for x in sys_settings['dept_list'].split(',') if x.strip()]
 
 def format_time_string(t_raw):
     clean = str(t_raw).replace(":", "").strip()
-    if len(clean) == 4:
-        return f"{clean[:2]}:{clean[2:]}"
+    if len(clean) == 4: return f"{clean[:2]}:{clean[2:]}"
     return clean
 
 def check_booking_conflict(resource, start_time_iso, end_time_iso):
-    res = supabase.table("bookings") \
-        .select("*") \
-        .eq("resource", resource) \
-        .in_("status", ["Approved", "Pending"]) \
-        .execute()
-    
+    res = supabase.table("bookings").select("*").eq("resource", resource).in_("status", ["Approved", "Pending"]).execute()
     new_s = datetime.fromisoformat(start_time_iso).replace(tzinfo=None)
     new_e = datetime.fromisoformat(end_time_iso).replace(tzinfo=None)
-    
     for item in res.data:
         ex_s = pd.to_datetime(item['start_time']).replace(tzinfo=None)
         ex_e = pd.to_datetime(item['end_time']).replace(tzinfo=None)
         if new_s < ex_e and new_e > ex_s:
             return True, item['requester'], item['status']
-            
     return False, None, None
     
 def send_line_notification(booking_id, resource, name, dept, t_start, t_end, purpose, destination, status_text="Pending"):
     render_url = "https://line-booking-system.onrender.com/notify"
-    GROUP_ID = "Cad74a32468ca40051bd7071a6064660d" 
     try:
         s_dt = pd.to_datetime(t_start)
         s_str = s_dt.strftime("%d/%m/%Y %H:%M")
         e_str = t_end if isinstance(t_end, str) else pd.to_datetime(t_end).strftime("%H:%M")
         payload = {
-            "id": booking_id, "target_id": GROUP_ID, "resource": resource, 
+            "id": booking_id, "target_id": sys_settings['group_id'], "resource": resource, 
             "name": name, "dept": dept, "date": s_str, "end_date": e_str, 
             "purpose": purpose, "destination": destination, "status": status_text
         }
-        r = requests.post(render_url, json=payload, timeout=30)
-        if r.status_code == 200:
-            st.toast(f"🔔 แจ้งเตือน {status_text} ผ่าน LINE สำเร็จ", icon="✅")
-        elif r.status_code == 429:
-            st.error("⚠️ โควตา LINE รายเดือนเต็มแล้ว (Error 429)")
-        else:
-            st.warning(f"⚠️ ส่งแจ้งเตือนไม่ได้: Status Code {r.status_code}")
-    except Exception as e:
-        st.error(f"📡 เกิดข้อผิดพลาดในการแจ้งเตือน: {e}")
+        requests.post(render_url, json=payload, timeout=30)
+    except: pass
 
 def auto_delete_old_bookings():
     threshold = (datetime.now() - timedelta(days=45)).isoformat()
@@ -100,7 +97,59 @@ def auto_delete_old_bookings():
     except: pass
 
 # ==========================================
-# 3. SIDEBAR & NAVIGATION
+# 3. ระบบ LOGIN & AUTHENTICATION
+# ==========================================
+if "admin_logged_in" not in st.session_state:
+    st.session_state["admin_logged_in"] = False
+if "admin_user" not in st.session_state:
+    st.session_state["admin_user"] = ""
+
+def check_admin_login():
+    if st.session_state["admin_logged_in"]:
+        return True
+    
+    st.subheader("🔐 เข้าสู่ระบบผู้ดูแลระบบ (Admin)")
+    try:
+        admins_data = supabase.table("app_admins").select("*").execute().data
+    except Exception as e:
+        st.error(f"ไม่สามารถดึงข้อมูล Admin ได้ กรุณาตรวจสอบตาราง app_admins: {e}")
+        return False
+
+    # กรณีไม่มี Admin ในระบบเลย (ทำครั้งแรก)
+    if not admins_data:
+        st.info("👋 ยินดีต้อนรับ! ระบบตรวจพบว่ายังไม่มี Admin กรุณาสร้างบัญชี Admin คนแรกเพื่อเริ่มใช้งาน")
+        with st.form("first_admin_form"):
+            new_u = st.text_input("ตั้ง Username")
+            new_p = st.text_input("ตั้ง Password", type="password")
+            if st.form_submit_button("บันทึก Admin คนแรก", type="primary"):
+                if new_u and new_p:
+                    supabase.table("app_admins").insert({"username": new_u, "password": new_p}).execute()
+                    st.success("✅ สร้าง Admin สำเร็จ! กรุณาเข้าสู่ระบบ")
+                    time.sleep(1.5)
+                    st.rerun()
+                else:
+                    st.error("⚠️ กรุณากรอก Username และ Password ให้ครบ")
+        return False
+    
+    # กรณีมี Admin แล้ว -> แสดงหน้า Login ปกติ
+    else:
+        with st.form("login_form"):
+            login_u = st.text_input("Username")
+            login_p = st.text_input("Password", type="password")
+            if st.form_submit_button("เข้าสู่ระบบ", type="primary"):
+                match = [a for a in admins_data if a['username'] == login_u and a['password'] == login_p]
+                if match:
+                    st.session_state["admin_logged_in"] = True
+                    st.session_state["admin_user"] = match[0]['username']
+                    st.success("✅ เข้าสู่ระบบสำเร็จ!")
+                    time.sleep(1)
+                    st.rerun()
+                else:
+                    st.error("❌ Username หรือ Password ไม่ถูกต้อง")
+        return False
+
+# ==========================================
+# 4. SIDEBAR & NAVIGATION
 # ==========================================
 auto_delete_old_bookings()
 pending_items = supabase.table("bookings").select("id").eq("status", "Pending").execute().data
@@ -114,184 +163,64 @@ if pending_count > 0:
     st.sidebar.markdown(f'<p class="blink">📢 มีรายการรออนุมัติ: {pending_count}</p>', unsafe_allow_html=True)
 
 st.sidebar.markdown("---")
-# เพิ่มเมนู ⭐ ประเมินการใช้งาน เข้าไป
-menu = ["📝 จองใหม่", "📅 ตารางงาน (Real-time)", "⭐ ประเมินการใช้งาน", "🔑 Admin (อนุมัติ)", "📊 รายงานประจำเดือน"]
+
+# แสดงสถานะ Login ใน Sidebar
+if st.session_state["admin_logged_in"]:
+    st.sidebar.success(f"👤 เข้าสู่ระบบแล้ว:\n**{st.session_state['admin_user']}**")
+    if st.sidebar.button("🚪 ออกจากระบบ (Logout)", use_container_width=True):
+        st.session_state["admin_logged_in"] = False
+        st.session_state["admin_user"] = ""
+        st.rerun()
+    st.sidebar.markdown("---")
+
+menu = ["📝 จองใหม่", "📅 ตารางงาน (Real-time)", "⭐ ประเมินการใช้งาน", "🔑 Admin (อนุมัติ)", "📊 รายงานประจำเดือน", "⚙️ ตั้งค่าระบบ (Admin)"]
 choice = st.sidebar.selectbox("เมนูจัดการระบบ", menu)
 
 # ==========================================
-# 4. หน้าจองใหม่ (BOOKING)
+# 5. หน้าจองใหม่ (BOOKING)
 # ==========================================
 if choice == "📝 จองใหม่":
     st.markdown('<div class="main-title">ระบบจองรถยนต์และห้องประชุม Online</div>', unsafe_allow_html=True)
-    st.markdown('##### 📋 ข้อมูลรถและคนขับ')
-    # --- [Step 1: คำนวณสถานะ Real-time] ---
+    st.markdown('##### 📋 ข้อมูลรถและคนขับ (อ้างอิงจากฐานข้อมูล)')
+    
     now_dt = datetime.utcnow() + timedelta(hours=7)
     t_today_start = now_dt.replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
     t_today_end = now_dt.replace(hour=23, minute=59, second=59, microsecond=999999).isoformat()
     
-    today_bookings = supabase.table("bookings") \
-        .select("resource, start_time, end_time") \
-        .eq("status", "Approved") \
-        .gte("start_time", t_today_start) \
-        .lte("start_time", t_today_end) \
-        .execute()
+    today_bookings = supabase.table("bookings").select("resource, start_time, end_time").eq("status", "Approved").gte("start_time", t_today_start).lte("start_time", t_today_end).execute()
         
-    car_status = {
-        "Civic (ตุ้ม)": {"text": "🟢 ปัจจุบันว่าง", "time": "", "class": "status-free"},
-        "Civic (บอล)": {"text": "🟢 ปัจจุบันว่าง", "time": "", "class": "status-free"},
-        "Camry (เนก)": {"text": "🟢 ปัจจุบันว่าง", "time": "", "class": "status-free"},
-        "MG": {"text": "🟢 ปัจจุบันว่าง", "time": "", "class": "status-free"}
-    }
-
-    room_status = {
-        "ห้องชั้น 1 (ห้องใหญ่)": {"text": "🟢 ปัจจุบันว่าง", "time": "", "class": "status-free"},
-        "ห้องชั้น 2": {"text": "🟢 ปัจจุบันว่าง", "time": "", "class": "status-free"},
-        "ห้อง VIP": {"text": "🟢 ปัจจุบันว่าง", "time": "", "class": "status-free"},
-        "ห้องชั้นลอย": {"text": "🟢 ปัจจุบันว่าง", "time": "", "class": "status-free"},
-        "ห้อง Production": {"text": "🟢 ปัจจุบันว่าง", "time": "", "class": "status-free"}
-    }
+    car_status = {car: {"text": "🟢 ปัจจุบันว่าง", "time": "", "class": "status-free"} for car in SYS_CARS}
+    room_status = {room: {"text": "🟢 ปัจจุบันว่าง", "time": "", "class": "status-free"} for room in SYS_ROOMS}
 
     if today_bookings.data:
         for b in today_bookings.data:
             res_name = b['resource']
-            key = "MG" if "MG" in res_name else res_name
-            
             st_dt = pd.to_datetime(b['start_time']).tz_localize(None)
             en_dt = pd.to_datetime(b['end_time']).tz_localize(None)
             
             if st_dt <= now_dt <= en_dt:
-                if key in car_status:
-                    car_status[key]["text"] = "🔴 ไม่ว่าง"
-                    car_status[key]["time"] = f"{st_dt.strftime('%H:%M')} - {en_dt.strftime('%H:%M')}"
-                    car_status[key]["class"] = "status-busy"
-                elif key in room_status:
-                    room_status[key]["text"] = "🔴 ไม่ว่าง"
-                    room_status[key]["time"] = f"{st_dt.strftime('%H:%M')} - {en_dt.strftime('%H:%M')}"
-                    room_status[key]["class"] = "status-busy"
+                if res_name in car_status:
+                    car_status[res_name]["text"] = "🔴 ไม่ว่าง"
+                    car_status[res_name]["time"] = f"{st_dt.strftime('%H:%M')} - {en_dt.strftime('%H:%M')}"
+                    car_status[res_name]["class"] = "status-busy"
+                elif res_name in room_status:
+                    room_status[res_name]["text"] = "🔴 ไม่ว่าง"
+                    room_status[res_name]["time"] = f"{st_dt.strftime('%H:%M')} - {en_dt.strftime('%H:%M')}"
+                    room_status[res_name]["class"] = "status-busy"
 
-# --- [Step 2: โค้ด CSS และ HTML] ---
-    css_style = """
-    <style>
-    /* CSS รถยนต์ */
-    .driver-grid-container { display: grid; grid-template-columns: repeat(2, 1fr); gap: 15px; margin-bottom: 25px; }
-    .driver-card { background-color: #ffffff; border: 1px solid #E3F2FD; border-top: 4px solid #1E88E5; border-radius: 8px; padding: 15px; box-shadow: 0 2px 5px rgba(0,0,0,0.05); }
-    .card-header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 1px dashed #BBDEFB; padding-bottom: 8px; margin-bottom: 12px; }
-    .card-header h4 { margin: 0; color: #0D47A1; font-size: 16px; font-weight: bold; }
-    .driver-card p { margin: 5px 0; font-size: 14px; color: #424242; }
-    .highlight-text { color: #1565C0; font-weight: bold; }
-
-    /* CSS ห้องประชุม */
-    .room-flex-container { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 25px; }
-    .room-badge-wrapper { background-color: #ffffff; border: 1px solid #F3E5F5; border-left: 4px solid #8E24AA; border-radius: 8px; padding: 10px; display: flex; flex-direction: column; align-items: center; justify-content: center; min-width: 150px; flex: 1; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
-    .room-name { font-size: 13px; font-weight: bold; color: #4A148C; margin-bottom: 6px; text-align: center; }
-
-    /* CSS ป้ายสถานะร่วม */
-    .status-badge { text-align: center; font-size: 12px; padding: 4px 10px; border-radius: 20px; font-weight: bold; min-width: 85px; }
-    .status-free { background-color: #E8F5E9; color: #2E7D32; border: 1px solid #A5D6A7; }
-    .status-busy { background-color: #FFEBEE; color: #C62828; border: 1px solid #EF9A9A; }
-    .status-time { font-size: 11px; margin-top: 3px; font-weight: normal; }
-    </style>
-    """
-
-    html_content = f"""
-    <div class="driver-grid-container">
-    <div class="driver-card">
-        <div class="card-header">
-            <h4>🚗 Civic <span style="color:#666; font-size:14px;">(ตุ้ม)</span></h4>
-            <div class="status-badge {car_status['Civic (ตุ้ม)']['class']}">
-                <div>{car_status['Civic (ตุ้ม)']['text']}</div>
-                <div class="status-time">{car_status['Civic (ตุ้ม)']['time']}</div>
-            </div>
-        </div>
-        <p><b>ทะเบียน:</b> 5ขฬ-4317-กทม</p><p><b>โทร:</b> <span class="highlight-text">098-8388055</span></p>
-    </div>
-    <div class="driver-card">
-        <div class="card-header">
-            <h4>🚗 Civic <span style="color:#666; font-size:14px;">(บอล)</span></h4>
-            <div class="status-badge {car_status['Civic (บอล)']['class']}">
-                <div>{car_status['Civic (บอล)']['text']}</div>
-                <div class="status-time">{car_status['Civic (บอล)']['time']}</div>
-            </div>
-        </div>
-        <p><b>ทะเบียน:</b> 5ขฬ-7680-กทม</p><p><b>โทร:</b> <span class="highlight-text">063-9305458</span></p>
-    </div>
-    <div class="driver-card">
-        <div class="card-header">
-            <h4>🚙 Camry <span style="color:#666; font-size:14px;">(เนก)</span></h4>
-            <div class="status-badge {car_status['Camry (เนก)']['class']}">
-                <div>{car_status['Camry (เนก)']['text']}</div>
-                <div class="status-time">{car_status['Camry (เนก)']['time']}</div>
-            </div>
-        </div>
-        <p><b>ทะเบียน:</b> 6ขข-4068-กทม</p><p><b>โทร:</b> <span class="highlight-text">081-0402527</span></p>
-    </div>
-    <div class="driver-card">
-        <div class="card-header">
-            <h4>🚙 MG-EP</h4>
-            <div class="status-badge {car_status['MG']['class']}">
-                <div>{car_status['MG']['text']}</div>
-                <div class="status-time">{car_status['MG']['time']}</div>
-            </div>
-        </div>
-        <p><b>ทะเบียน:</b> 5ขก-7378-กทม</p><p><b>โทร:</b> <span style="color:#9E9E9E;">-</span></p>
-    </div>
-    </div>
-
-    <h5 style="margin-top: 20px;">🏢 สถานะห้องประชุม</h5>
-    <div class="room-flex-container">
-    <div class="room-badge-wrapper">
-        <div class="room-name">ห้องชั้น 1 (ห้องใหญ่)</div>
-        <div class="status-badge {room_status['ห้องชั้น 1 (ห้องใหญ่)']['class']}">
-            <div>{room_status['ห้องชั้น 1 (ห้องใหญ่)']['text']}</div>
-            <div class="status-time">{room_status['ห้องชั้น 1 (ห้องใหญ่)']['time']}</div>
-        </div>
-    </div>
-    <div class="room-badge-wrapper">
-        <div class="room-name">ห้องชั้น 2</div>
-        <div class="status-badge {room_status['ห้องชั้น 2']['class']}">
-            <div>{room_status['ห้องชั้น 2']['text']}</div>
-            <div class="status-time">{room_status['ห้องชั้น 2']['time']}</div>
-        </div>
-    </div>
-    <div class="room-badge-wrapper">
-        <div class="room-name">ห้อง VIP</div>
-        <div class="status-badge {room_status['ห้อง VIP']['class']}">
-            <div>{room_status['ห้อง VIP']['text']}</div>
-            <div class="status-time">{room_status['ห้อง VIP']['time']}</div>
-        </div>
-    </div>
-    <div class="room-badge-wrapper">
-        <div class="room-name">ห้องชั้นลอย</div>
-        <div class="status-badge {room_status['ห้องชั้นลอย']['class']}">
-            <div>{room_status['ห้องชั้นลอย']['text']}</div>
-            <div class="status-time">{room_status['ห้องชั้นลอย']['time']}</div>
-        </div>
-    </div>
-    <div class="room-badge-wrapper">
-        <div class="room-name">ห้อง Production</div>
-        <div class="status-badge {room_status['ห้อง Production']['class']}">
-            <div>{room_status['ห้อง Production']['text']}</div>
-            <div class="status-time">{room_status['ห้อง Production']['time']}</div>
-        </div>
-    </div>
-    </div>
-    """
-    # --- [Step 3: สั่งแสดงผล UI] ---
-    st.markdown(css_style + html_content, unsafe_allow_html=True)
+    st.markdown("""<style>.status-badge { text-align: center; font-size: 12px; padding: 4px 10px; border-radius: 20px; font-weight: bold; min-width: 85px; margin-top:5px;} .status-free { background-color: #E8F5E9; color: #2E7D32; border: 1px solid #A5D6A7; } .status-busy { background-color: #FFEBEE; color: #C62828; border: 1px solid #EF9A9A; } .status-time { font-size: 11px; font-weight: normal; }</style>""", unsafe_allow_html=True)
     
-    now_dt = datetime.utcnow() + timedelta(hours=7)
-    t_today_start = (datetime.utcnow() + timedelta(hours=7)).replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
-    t_today_end = now_dt.replace(hour=23, minute=59, second=59, microsecond=999999).isoformat()
+    col_c1, col_c2, col_c3, col_c4, col_c5 = st.columns(5)
+    cols = [col_c1, col_c2, col_c3, col_c4, col_c5]
+    for i, car in enumerate(SYS_CARS):
+        with cols[i % 5].container(border=True):
+            st.markdown(f"**🚗 {car}**")
+            st.markdown(f"<div class='status-badge {car_status[car]['class']}'><div>{car_status[car]['text']}</div><div class='status-time'>{car_status[car]['time']}</div></div>", unsafe_allow_html=True)
     
-    today_approved_res = supabase.table("bookings") \
-        .select("id") \
-        .eq("status", "Approved") \
-        .gte("start_time", t_today_start) \
-        .lte("start_time", t_today_end) \
-        .execute()
+    st.markdown("---")
     
+    today_approved_res = supabase.table("bookings").select("id").eq("status", "Approved").gte("start_time", t_today_start).lte("start_time", t_today_end).execute()
     today_approved_count = len(today_approved_res.data) if today_approved_res.data else 0
-    
     d1, d2, d3 = st.columns(3)
     d1.metric("รายการจองวันนี้", f"{today_approved_count} รายการ")
     d2.metric("รอพี่อนุมัติ", f"{pending_count} รายการ")
@@ -301,19 +230,12 @@ if choice == "📝 จองใหม่":
     col1, col2 = st.columns(2)
     with col1:
         cat = st.radio("ประเภททรัพยากร", ["รถยนต์", "ห้องประชุม"], horizontal=True)
-        res_list = ["Civic (ตุ้ม)", "Civic (บอล)", "Camry (เนก)", "MG", "MG (เนก)"] if cat == "รถยนต์" else ["ห้องชั้น 1 (ห้องใหญ่)", "ห้องชั้น 2", "ห้อง VIP", "ห้องชั้นลอย", "ห้อง Production"]
+        res_list = SYS_CARS if cat == "รถยนต์" else SYS_ROOMS
         res = st.selectbox("เลือกรายการ", res_list)
         dest = st.text_input("สถานที่ปลายทาง") if cat == "รถยนต์" else "Office"
         name = st.text_input("ชื่อผู้จอง")
         phone = st.text_input("เบอร์โทรศัพท์")
-        
-        # แก้ไข: เปลี่ยนแผนกเป็น Dropdown ตามที่กำหนด 17 แผนก
-        dept_options = [
-            "AC", "HR", "Sales", "QA", "PE", "Fac", "Loading", "Unload", 
-            "Coating", "Repair", "Delivery", "Assembly", "QC - MS", 
-            "Metal sheet", "Factory 1", "Factory 2", "Admin (JP)"
-        ]
-        dept = st.selectbox("แผนก", dept_options)
+        dept = st.selectbox("แผนก", SYS_DEPTS)
 
     with col2:
         d_start = st.date_input("วันที่เริ่ม", datetime.now().date(), min_value=datetime.now().date())
@@ -347,12 +269,13 @@ if choice == "📝 จองใหม่":
                 if resp.data:
                     send_line_notification(resp.data[0]['id'], res, name, dept, ts, te, reason, dest)
                     st.success("✅ ส่งคำขอเรียบร้อย! โปรดรอ Admin อนุมัติ")
+                    st.markdown('<div class="blink" style="text-align:center; padding:15px; background-color:#FFF9C4; border-radius:10px; border: 2px solid #FBC02D;">⭐ อย่าลืมเข้ามาให้คะแนนพนักงานขับรถหลังใช้งานเสร็จนะครับ ⭐</div>', unsafe_allow_html=True)
                     st.balloons()
-                    time.sleep(2)
+                    time.sleep(3)
                     st.rerun()
 
 # ==========================================
-# 5. หน้าตารางงาน 
+# 6. หน้าตารางงาน 
 # ==========================================
 elif choice == "📅 ตารางงาน (Real-time)":
     st.subheader("📅 ตารางการใช้งานปัจจุบันและล่วงหน้า")
@@ -362,22 +285,15 @@ elif choice == "📅 ตารางงาน (Real-time)":
     view_cat = f_c2.selectbox("กรองตามประเภท", ["ทั้งหมด", "รถยนต์", "ห้องประชุม"])
     
     t_today_start = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
-    
-    db_res = supabase.table("bookings") \
-        .select("*") \
-        .eq("status", "Approved") \
-        .gte("start_time", t_today_start) \
-        .order("start_time") \
-        .execute()
-    
+    db_res = supabase.table("bookings").select("*").eq("status", "Approved").gte("start_time", t_today_start).order("start_time").execute()
     df = pd.DataFrame(db_res.data)
     
     if df.empty:
         st.info("ขณะนี้ไม่มีรายการจอง")
     else:
-        if view_cat == "รถยนต์": df = df[df['resource'].str.contains("Civic|Camry|MG", na=False)]
-        elif view_cat == "ห้องประชุม": df = df[df['resource'].str.contains("ห้อง", na=False)]
-        if search_q: df = df[df['requester'].str.contains(search_q, case=False) | df['destination'].str.contains(search_q, case=False)]
+        if view_cat == "รถยนต์": df = df[df['resource'].isin(SYS_CARS)]
+        elif view_cat == "ห้องประชุม": df = df[df['resource'].isin(SYS_ROOMS)]
+        if search_q: df = df[df['requester'].str.contains(search_q, case=False, na=False) | df['destination'].str.contains(search_q, case=False, na=False)]
         
         if not df.empty:
             df_show = df.copy().reset_index(drop=True)
@@ -393,32 +309,34 @@ elif choice == "📅 ตารางงาน (Real-time)":
 
             st.markdown("---")
             with st.expander("🛠️ จัดการข้อมูล (แก้ไข/ลบ โดย Admin)"):
-                sel_no = st.selectbox("เลือก No. ลำดับที่ต้องการจัดการ", df_show['ลำดับ/No.'].tolist())
-                row = df_show[df_show['ลำดับ/No.'] == sel_no].iloc[0]
-                
-                with st.form("edit_full_form"):
-                    e_col1, e_col2 = st.columns(2)
-                    all_res = ["Civic (ตุ้ม)", "Civic (บอล)", "Camry (เนก)", "MG", "MG (เนก)", "ห้องชั้น 1 (ห้องใหญ่)", "ห้องชั้น 2", "ห้อง VIP", "ห้องชั้นลอย", "ห้อง Production"]
-                    try: res_idx = all_res.index(row['resource'])
-                    except: res_idx = 0 
+                # เปลี่ยนจากกรอกรหัส s1234 เป็นให้เช็ค Login Session
+                if not st.session_state["admin_logged_in"]:
+                    st.warning("⚠️ เฉพาะผู้ดูแลระบบเท่านั้น กรุณาเข้าสู่ระบบผ่านเมนู '🔑 Admin' ทางซ้ายมือก่อนใช้งานส่วนนี้")
+                else:
+                    sel_no = st.selectbox("เลือก No. ลำดับที่ต้องการจัดการ", df_show['ลำดับ/No.'].tolist())
+                    row = df_show[df_show['ลำดับ/No.'] == sel_no].iloc[0]
                     
-                    n_res = e_col1.selectbox("รายการ / Resource", all_res, index=res_idx)
-                    n_req = e_col1.text_input("ผู้จอง / Name", str(row['requester']))
-                    n_dest = e_col1.text_input("ปลายทาง / Destination", str(row.get('destination', '-')))
-                    
-                    dt_s = pd.to_datetime(row['start_time'])
-                    dt_e = pd.to_datetime(row['end_time'])
-                    n_d_s = e_col2.date_input("วันที่เริ่ม", dt_s.date())
-                    n_t_s = e_col2.text_input("เวลาเริ่ม (4 หลัก)", dt_s.strftime("%H%M"))
-                    n_d_e = e_col2.date_input("วันที่สิ้นสุด", dt_e.date())
-                    n_t_e = e_col2.text_input("เวลาสิ้นสุด (4 หลัก)", dt_e.strftime("%H%M"))
-                    
-                    n_purp = st.text_area("วัตถุประสงค์ / Purpose", str(row.get('purpose', '-')))
-                    pw = st.text_input("รหัสผ่าน Admin", type="password")
-                    b1, b2 = st.columns(2)
-                    
-                    if b1.form_submit_button("💾 บันทึกการแก้ไข", use_container_width=True):
-                        if pw == "s1234":
+                    with st.form("edit_full_form"):
+                        e_col1, e_col2 = st.columns(2)
+                        all_res = SYS_CARS + SYS_ROOMS
+                        try: res_idx = all_res.index(row['resource'])
+                        except: res_idx = 0 
+                        
+                        n_res = e_col1.selectbox("รายการ / Resource", all_res, index=res_idx)
+                        n_req = e_col1.text_input("ผู้จอง / Name", str(row['requester']))
+                        n_dest = e_col1.text_input("ปลายทาง / Destination", str(row.get('destination', '-')))
+                        
+                        dt_s = pd.to_datetime(row['start_time'])
+                        dt_e = pd.to_datetime(row['end_time'])
+                        n_d_s = e_col2.date_input("วันที่เริ่ม", dt_s.date())
+                        n_t_s = e_col2.text_input("เวลาเริ่ม (4 หลัก)", dt_s.strftime("%H%M"))
+                        n_d_e = e_col2.date_input("วันที่สิ้นสุด", dt_e.date())
+                        n_t_e = e_col2.text_input("เวลาสิ้นสุด (4 หลัก)", dt_e.strftime("%H%M"))
+                        
+                        n_purp = st.text_area("วัตถุประสงค์ / Purpose", str(row.get('purpose', '-')))
+                        
+                        b1, b2 = st.columns(2)
+                        if b1.form_submit_button("💾 บันทึกการแก้ไข", use_container_width=True):
                             try:
                                 fs, fe = format_time_string(n_t_s), format_time_string(n_t_e)
                                 f_start = datetime.combine(n_d_s, datetime.strptime(fs, "%H:%M").time()).isoformat()
@@ -429,41 +347,29 @@ elif choice == "📅 ตารางงาน (Real-time)":
                                 }).eq("id", row['id']).execute()
                                 st.success("อัปเดตเรียบร้อย!"); st.rerun()
                             except: st.error("❌ รูปแบบเวลาผิด")
-                        else: st.error("รหัสผ่านไม่ถูกต้อง")
-                    
-                    if b2.form_submit_button("🗑️ ลบรายการนี้", use_container_width=True):
-                        if pw == "s1234":
+                        
+                        if b2.form_submit_button("🗑️ ลบรายการนี้", use_container_width=True):
                             supabase.table("bookings").delete().eq("id", row['id']).execute(); st.rerun()
-                        else: st.error("รหัสผ่านไม่ถูกต้อง")
 
 # ==========================================
-# (ใหม่) เมนู ⭐ ประเมินการใช้งาน
+# 7. เมนู ⭐ ประเมินการใช้งาน
 # ==========================================
 elif choice == "⭐ ประเมินการใช้งาน":
     st.subheader("⭐ ประเมินการปฏิบัติงานพนักงานขับรถ")
-    
-    # ดึงเวลาปัจจุบัน (UTC+7)
     now_iso = (datetime.utcnow() + timedelta(hours=7)).isoformat()
-    car_list = ["Civic (ตุ้ม)", "Civic (บอล)", "Camry (เนก)", "MG", "MG (เนก)"]
-    
     try:
-        # ค้นหารายการที่: 1. อนุมัติแล้ว 2. เป็นรถยนต์ 3. เวลาสิ้นสุดผ่านไปแล้ว (จบการจอง)
-        res = supabase.table("bookings").select("*").eq("status", "Approved").in_("resource", car_list).lt("end_time", now_iso).execute()
+        res = supabase.table("bookings").select("*").eq("status", "Approved").in_("resource", SYS_CARS).lt("end_time", now_iso).execute()
         data = res.data
-        
-        # กรองเฉพาะรายการที่ยังไม่ได้ประเมิน
         unrated = [d for d in data if not d.get("is_rated")]
         
         if not unrated:
             st.success("🎉 ไม่มีรายการที่ต้องประเมินในขณะนี้ครับ ทุกรายการได้รับการให้คะแนนครบถ้วนแล้ว")
         else:
             st.info("💡 กรุณาเลือกรายการจองรถยนต์ที่เพิ่งใช้งานเสร็จสิ้นเพื่อทำการประเมินพนักงานขับรถ")
-            
-            # จัดทำ Option ให้อ่านง่าย: ว/ด/ป | ทรัพยากร | ชื่อผู้จอง
             options_dict = {}
-            for d in sorted(unrated, key=lambda x: x['end_time'], reverse=True): # เรียงจากใหม่ไปเก่า
+            for d in sorted(unrated, key=lambda x: x['end_time'], reverse=True):
                 end_dt_str = pd.to_datetime(d['end_time']).strftime('%d/%m/%Y %H:%M')
-                label = f"วันที่ใช้งาน: {end_dt_str} | รถ: {d['resource']} | ผู้จอง: {d['requester']}"
+                label = f"วันที่: {end_dt_str} | รถ: {d['resource']} | ผู้จอง: {d['requester']}"
                 options_dict[label] = d
                 
             selected_label = st.selectbox("เลือกรถที่ต้องการประเมิน", list(options_dict.keys()))
@@ -474,45 +380,34 @@ elif choice == "⭐ ประเมินการใช้งาน":
             
             with st.form("rating_form"):
                 st.write("**หัวข้อประเมิน (1 = ต้องปรับปรุง, 5 = ดีมาก)**")
-                
                 q1 = st.radio("พนักงานขับรถมีสภาพร่างกายพร้อมปฏิบัติงาน", [1, 2, 3, 4, 5], index=4, horizontal=True)
                 q2 = st.radio("สภาพรถพร้อมใช้งานมีความสะอาดและปลอดภัย", [1, 2, 3, 4, 5], index=4, horizontal=True)
                 q3 = st.radio("ขับรถด้วยความระมัดระวังและปลอดภัย", [1, 2, 3, 4, 5], index=4, horizontal=True)
                 q4 = st.radio("กิริยาวาจาและพฤติกรรมมีความเหมาะสม", [1, 2, 3, 4, 5], index=4, horizontal=True)
-                
                 suggestion = st.text_area("ข้อเสนอแนะอื่นๆ")
                 
                 st.warning("⚠️ โปรดตรวจสอบข้อมูลให้ครบถ้วนก่อนส่ง (ไม่สามารถแก้ไขข้อมูลได้ภายหลังการให้คะแนน)")
-                confirm = st.checkbox("แน่ใจ / ยืนยันข้อมูล (หากต้องการแก้ไขให้แก้ไขก่อนติ๊กถูกช่องนี้)")
+                confirm = st.checkbox("แน่ใจ / ยืนยันข้อมูล")
                 
                 if st.form_submit_button("ส่งผลการประเมิน", type="primary"):
                     if not confirm:
                         st.error("❌ กรุณากดยืนยัน (ติ๊กถูกที่ช่อง แน่ใจ / ยืนยันข้อมูล) ก่อนส่งผลประเมินครับ")
                     else:
-                        try:
-                            supabase.table("bookings").update({
-                                "is_rated": True,
-                                "q1": q1,
-                                "q2": q2,
-                                "q3": q3,
-                                "q4": q4,
-                                "suggestion": suggestion
-                            }).eq("id", selected_booking['id']).execute()
-                            
-                            st.success("✅ บันทึกผลการประเมินเรียบร้อยแล้ว ขอบคุณที่ใช้บริการครับ!")
-                            time.sleep(2)
-                            st.rerun()
-                        except Exception as e:
-                            st.error(f"เกิดข้อผิดพลาดในการบันทึกข้อมูล: {e} \n(แจ้ง Admin ให้ตรวจสอบ Column ใน Database)")
+                        supabase.table("bookings").update({
+                            "is_rated": True, "q1": q1, "q2": q2, "q3": q3, "q4": q4, "suggestion": suggestion
+                        }).eq("id", selected_booking['id']).execute()
+                        st.success("✅ บันทึกผลการประเมินเรียบร้อยแล้ว ขอบคุณที่ใช้บริการครับ!")
+                        time.sleep(2)
+                        st.rerun()
     except Exception as e:
         st.error(f"ไม่สามารถเชื่อมต่อฐานข้อมูลประเมินได้: {e}")
 
 # ==========================================
-# 6. หน้า ADMIN (APPROVAL)
+# 8. หน้า ADMIN (APPROVAL) (Protected)
 # ==========================================
 elif choice == "🔑 Admin (อนุมัติ)":
-    st.subheader("🔑 ระบบจัดการคำขอ")
-    if st.text_input("กรอกรหัสผ่านเพื่ออนุมัติ", type="password") == "s1234":
+    if check_admin_login():
+        st.subheader("🔑 ระบบจัดการคำขอ (อนุมัติการจอง)")
         items = supabase.table("bookings").select("*").eq("status", "Pending").order("id").execute().data
         if not items: st.info("ไม่มีรายการรออนุมัติ")
         else:
@@ -533,18 +428,17 @@ elif choice == "🔑 Admin (อนุมัติ)":
                             supabase.table("bookings").update({"status": "Approved", "start_time": final_start}).eq("id", item['id']).execute()
                             send_line_notification(item['id'], item['resource'], item['requester'], item['dept'], final_start, item['end_time'], item['purpose'], item.get('destination','-'), "Approved")
                             st.rerun()
-                        except Exception as e:
-                            st.error(f"❌ รูปแบบเวลาผิด: {e}")
+                        except Exception as e: st.error(f"❌ รูปแบบเวลาผิด: {e}")
                     
                     if c2.button("ลบ 🗑️", key=f"dl_{item['id']}", use_container_width=True):
                         supabase.table("bookings").delete().eq("id", item['id']).execute(); st.rerun()
 
 # ==========================================
-# 7. หน้ารายงาน (REPORT)
+# 9. หน้ารายงาน (REPORT) (Protected)
 # ==========================================
 elif choice == "📊 รายงานประจำเดือน":
-    st.subheader("📊 รายงานสรุปการใช้ทรัพยากรและการประเมิน")
-    if st.text_input("รหัสผ่านรายงาน", type="password") == "s1234":
+    if check_admin_login():
+        st.subheader("📊 รายงานสรุปการใช้ทรัพยากรและการประเมิน")
         data = supabase.table("bookings").select("*").eq("status", "Approved").execute().data
         if data:
             df_rep = pd.DataFrame(data)
@@ -556,13 +450,12 @@ elif choice == "📊 รายงานประจำเดือน":
             rep_type = st.selectbox("ประเภทรายงาน", ["ทั้งหมด", "รถยนต์", "ห้องประชุม"])
             
             f_df = df_rep[df_rep['Month-Year'] == sel_m].copy()
-            if rep_type == "รถยนต์": f_df = f_df[f_df['resource'].str.contains("Civic|Camry|MG", na=False)]
-            elif rep_type == "ห้องประชุม": f_df = f_df[f_df['resource'].str.contains("ห้อง", na=False)]
+            if rep_type == "รถยนต์": f_df = f_df[f_df['resource'].isin(SYS_CARS)]
+            elif rep_type == "ห้องประชุม": f_df = f_df[f_df['resource'].isin(SYS_ROOMS)]
             
             f_df['เวลาเริ่ม'] = f_df['start_time'].dt.strftime('%d/%m/%Y %H:%M')
             out_df = f_df[['resource', 'requester', 'dept', 'เวลาเริ่ม', 'destination', 'purpose']].copy()
             
-            # --- ส่วนการทำ % และแสดงผลคะแนนในหน้า Report ---
             if 'is_rated' in f_df.columns:
                 out_df['ประเมิน'] = f_df['is_rated'].apply(lambda x: 'ใช่' if x == True else 'ยัง')
                 out_df['ร่างกาย'] = f_df.get('q1', '-')
@@ -571,33 +464,93 @@ elif choice == "📊 รายงานประจำเดือน":
                 out_df['มารยาท'] = f_df.get('q4', '-')
                 out_df['ข้อเสนอแนะ'] = f_df.get('suggestion', '-')
                 
-                # แสดงค่าเฉลี่ยคะแนนเปอร์เซ็นต์ เฉพาะเมื่อเลือกดูทั้งหมดหรือรถยนต์
                 if rep_type in ["ทั้งหมด", "รถยนต์"]:
                     st.markdown("---")
                     st.markdown("#### ⭐ สรุปเปอร์เซ็นต์ความพึงพอใจพนักงานขับรถเฉลี่ย ประจำเดือน")
-                    rated_cars = f_df[(f_df['resource'].str.contains("Civic|Camry|MG", na=False)) & (f_df['is_rated'] == True)]
+                    rated_cars = f_df[(f_df['resource'].isin(SYS_CARS)) & (f_df['is_rated'] == True)]
                     
                     if not rated_cars.empty:
-                        # คำนวณเป็นเปอร์เซ็นต์ (คะแนนเต็ม 5 คือ 100%)
-                        avg1 = (rated_cars['q1'].mean() / 5) * 100
-                        avg2 = (rated_cars['q2'].mean() / 5) * 100
-                        avg3 = (rated_cars['q3'].mean() / 5) * 100
-                        avg4 = (rated_cars['q4'].mean() / 5) * 100
+                        avg1, avg2, avg3, avg4 = (rated_cars['q1'].mean()/5)*100, (rated_cars['q2'].mean()/5)*100, (rated_cars['q3'].mean()/5)*100, (rated_cars['q4'].mean()/5)*100
                         total_avg = (avg1 + avg2 + avg3 + avg4) / 4
-                        
                         st.success(f"📈 ภาพรวมเฉลี่ยความพึงพอใจ: **{total_avg:.2f}%**")
                         sc1, sc2, sc3, sc4 = st.columns(4)
                         sc1.metric("1. สภาพร่างกาย", f"{avg1:.2f}%")
                         sc2.metric("2. สภาพรถ/ความสะอาด", f"{avg2:.2f}%")
                         sc3.metric("3. การขับรถปลอดภัย", f"{avg3:.2f}%")
                         sc4.metric("4. มารยาท", f"{avg4:.2f}%")
-                    else:
-                        st.info("ยังไม่มีข้อมูลการประเมินในเดือนที่เลือก")
+                    else: st.info("ยังไม่มีข้อมูลการประเมินในเดือนที่เลือก")
             
             st.markdown("---")
             st.dataframe(out_df, use_container_width=True)
             
             buf = io.BytesIO()
-            with pd.ExcelWriter(buf, engine='xlsxwriter') as w:
-                out_df.to_excel(w, index=False)
+            with pd.ExcelWriter(buf, engine='xlsxwriter') as w: out_df.to_excel(w, index=False)
             st.download_button("📥 ดาวน์โหลดรายงาน (Excel)", buf.getvalue(), f"Report_{rep_type}_{sel_m.replace('/', '-')}.xlsx")
+
+# ==========================================
+# 10. เมนู ⚙️ ตั้งค่าระบบ (Protected)
+# ==========================================
+elif choice == "⚙️ ตั้งค่าระบบ (Admin)":
+    if check_admin_login():
+        st.subheader("⚙️ จัดการข้อมูลระบบ (ไม่ต้องแก้ไขโค้ด)")
+        
+        tab1, tab2 = st.tabs(["🔧 ตั้งค่าระบบหลัก", "👥 จัดการผู้ดูแลระบบ (Admin)"])
+        
+        with tab1:
+            st.info("💡 คำแนะนำ: สำหรับรายชื่อรถ ห้อง และแผนก ให้ใช้เครื่องหมายลูกน้ำ (,) คั่นระหว่างรายชื่อเสมอ")
+            with st.form("settings_form"):
+                new_cars = st.text_area("🚗 รายชื่อรถยนต์ (และชื่อคนขับ)", sys_settings.get('car_list', ''))
+                new_rooms = st.text_area("🏢 รายชื่อห้องประชุม", sys_settings.get('room_list', ''))
+                new_depts = st.text_area("🏢 รายชื่อแผนก", sys_settings.get('dept_list', ''))
+                
+                st.markdown("---")
+                st.markdown("##### 🔐 การตั้งค่า LINE Bot (สำหรับนักพัฒนา)")
+                new_token = st.text_input("LINE Access Token", sys_settings.get('line_token', ''))
+                new_secret = st.text_input("LINE Secret", sys_settings.get('line_secret', ''))
+                new_group = st.text_input("LINE Group ID (ห้องแชทที่ให้แจ้งเตือน)", sys_settings.get('group_id', ''))
+                
+                st.warning("⚠️ การแก้ไขข้อมูลนี้จะส่งผลต่อระบบทั้งหมดทันที กรุณาตรวจสอบให้ถูกต้องก่อนกดบันทึก")
+                confirm = st.checkbox("☑️ ฉันตรวจสอบข้อมูลแล้ว และยืนยันการแก้ไขข้อมูล")
+                
+                if st.form_submit_button("💾 บันทึกการตั้งค่า", type="primary"):
+                    if confirm:
+                        supabase.table("app_settings").update({
+                            "car_list": new_cars, "room_list": new_rooms, "dept_list": new_depts,
+                            "line_token": new_token, "line_secret": new_secret, "group_id": new_group
+                        }).eq("id", 1).execute()
+                        st.success("✅ บันทึกข้อมูลตั้งค่าสำเร็จ!")
+                        time.sleep(2)
+                        st.rerun()
+                    else:
+                        st.error("❌ กรุณาติ๊กถูกที่ช่อง 'ยืนยันการแก้ไขข้อมูล' ก่อนกดบันทึกครับ")
+        
+        with tab2:
+            st.markdown("##### 👥 รายชื่อ Admin ในระบบ")
+            admins = supabase.table("app_admins").select("*").execute().data
+            if admins:
+                for a in admins:
+                    col_u, col_d = st.columns([4, 1])
+                    col_u.markdown(f"👤 **{a['username']}**")
+                    if col_d.button("🗑️ ลบ", key=f"del_adm_{a['id']}", use_container_width=True):
+                        if len(admins) == 1:
+                            st.error("❌ ไม่สามารถลบ Admin คนสุดท้ายได้")
+                        else:
+                            supabase.table("app_admins").delete().eq("id", a['id']).execute()
+                            st.rerun()
+            st.markdown("---")
+            st.markdown("##### ➕ เพิ่ม Admin ใหม่")
+            with st.form("add_admin_form"):
+                n_user = st.text_input("Username ใหม่")
+                n_pass = st.text_input("Password ใหม่", type="password")
+                if st.form_submit_button("บันทึก Admin ใหม่"):
+                    if not n_user or not n_pass:
+                        st.error("กรุณากรอกข้อมูลให้ครบถ้วน")
+                    else:
+                        is_dup = any(x['username'] == n_user for x in admins)
+                        if is_dup:
+                            st.error("❌ Username นี้มีอยู่แล้วในระบบ")
+                        else:
+                            supabase.table("app_admins").insert({"username": n_user, "password": n_pass}).execute()
+                            st.success(f"✅ เพิ่ม Admin {n_user} สำเร็จ!")
+                            time.sleep(1)
+                            st.rerun()
