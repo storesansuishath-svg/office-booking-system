@@ -93,6 +93,15 @@ def check_booking_conflict(resource, start_time_iso, end_time_iso):
         if new_s < ex_e and new_e > ex_s:
             return True, item['requester'], item['status']
     return False, None, None
+
+def get_unrated_bookings(name, dept):
+    # เช็คเฉพาะรายการรถของ "คนเดิม" โดยจับคู่ ชื่อ + แผนก ให้ตรงกับรายการจองที่ยังไม่ได้ประเมิน
+    try:
+        now_iso = (datetime.utcnow() + timedelta(hours=7)).isoformat()
+        res = supabase.table("bookings").select("*").eq("requester", name).eq("dept", dept).eq("status", "Approved").in_("resource", SYS_CARS).lt("end_time", now_iso).gte("end_time", "2026-07-01T00:00:00").execute()
+        return [d for d in res.data if not d.get("is_rated")]
+    except:
+        return []
     
 def send_line_notification(booking_id, resource, name, dept, t_start, t_end, purpose, destination, status_text="Pending"):
     render_url = "https://line-booking-system.onrender.com/notify"
@@ -395,8 +404,12 @@ if choice == "📝 จองใหม่":
         except: ts, te = None, None
 
     if st.button("ยืนยันการส่งคำขอจอง", use_container_width=True):
+        unrated_pending = get_unrated_bookings(name, dept) if name and dept else []
         if not name or not dept or ts is None:
             st.warning("⚠️ กรุณากรอกข้อมูลให้ครบถ้วน")
+        elif unrated_pending:
+            car_names = ", ".join(sorted(set(d['resource'] for d in unrated_pending)))
+            st.error(f"❌ คุณ {name} ({dept}) มีรายการที่ยังไม่ได้ให้คะแนนคนขับ ({car_names}) กรุณาไปที่เมนู '⭐ ประเมินการใช้งาน' เพื่อให้คะแนนก่อน แล้วค่อยกลับมาจองใหม่นะครับ")
         elif ts < datetime.now(): 
             st.error("❌ ไม่สามารถจองย้อนหลังได้ กรุณาเลือกเวลาปัจจุบันหรือล่วงหน้า")
         elif ts >= te:
