@@ -675,7 +675,7 @@ elif choice == "⚙️ ตั้งค่าระบบ (Admin)":
                 if st.form_submit_button("💾 บันทึกการตั้งค่า", type="primary"):
                     if confirm:
                         try:
-                            update_id = sys_settings.get('id', 1)
+                            update_id = sys_settings.get('id', 1) or 0
                             if update_id == 0:
                                 supabase.table("app_settings").insert({
                                     "car_list": new_cars, "room_list": new_rooms, "dept_list": new_depts,
