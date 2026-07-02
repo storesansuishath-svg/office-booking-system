@@ -13,9 +13,6 @@ SUPABASE_URL = "https://qejqynbxdflwebzzwfzu.supabase.co"
 SUPABASE_KEY = "sb_publishable_hvNQEPvuEAlXfVeCzpy7Ug_kzvihQqq"
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-CURRENT_BOT_ID = "@871fsfnr"  
-LINE_ADD_FRIEND_URL = f"https://line.me/R/ti/p/{CURRENT_BOT_ID}"
-
 st.set_page_config(page_title="ระบบจองรถและห้องประชุม - Sansuisha", layout="wide")
 
 st.markdown("""
@@ -50,7 +47,8 @@ def load_settings():
                 "group_id": "Cad74a32468ca40051bd7071a6064660d",
                 "car_list": "Civic (ตุ้ม),Civic (บอล),Camry (เนก),MG,MG (เนก)",
                 "room_list": "ห้องชั้น 1 (ห้องใหญ่),ห้องชั้น 2,ห้อง VIP,ห้องชั้นลอย,ห้อง Production",
-                "dept_list": "AC,HR,Sales,QA,PE,Fac,Loading,Unload,Coating,Repair,Delivery,Assembly,QC - MS,Metal sheet,Factory 1,Factory 2,Admin (JP)"
+                "dept_list": "AC,HR,Sales,QA,PE,Fac,Loading,Unload,Coating,Repair,Delivery,Assembly,QC - MS,Metal sheet,Factory 1,Factory 2,Admin (JP)",
+                "line_bot_id": "@871fsfnr"
             }
             supabase.table("app_settings").insert(default_data).execute()
             return supabase.table("app_settings").select("*").execute().data[0]
@@ -63,10 +61,13 @@ def load_settings():
             "group_id": "Cad74a32468ca40051bd7071a6064660d",
             "car_list": "Civic (ตุ้ม),Civic (บอล),Camry (เนก),MG,MG (เนก)",
             "room_list": "ห้องชั้น 1 (ห้องใหญ่),ห้องชั้น 2,ห้อง VIP,ห้องชั้นลอย,ห้อง Production",
-            "dept_list": "AC,HR,Sales,QA,PE,Fac,Loading,Unload,Coating,Repair,Delivery,Assembly,QC - MS,Metal sheet,Factory 1,Factory 2,Admin (JP)"
+            "dept_list": "AC,HR,Sales,QA,PE,Fac,Loading,Unload,Coating,Repair,Delivery,Assembly,QC - MS,Metal sheet,Factory 1,Factory 2,Admin (JP)",
+            "line_bot_id": "@871fsfnr"
         }
 
 sys_settings = load_settings()
+CURRENT_BOT_ID = sys_settings.get('line_bot_id', '@871fsfnr')
+LINE_ADD_FRIEND_URL = f"https://line.me/R/ti/p/{CURRENT_BOT_ID}"
 
 try:
     SYS_CARS = [x.strip() for x in sys_settings.get('car_list', '').split(',') if x.strip()]
@@ -133,8 +134,9 @@ def check_admin_login():
 
     if not admins_data:
         st.info("👋 ยินดีต้อนรับ! ระบบตรวจพบว่ายังไม่มี Admin กรุณาสร้างบัญชี Admin คนแรกเพื่อเริ่มใช้งาน")
+        st.warning("⚠️ แนะนำ: ให้ตั้ง Username ว่า 'administrator' เพื่อให้มีสิทธิ์สูงสุดในการเพิ่ม/ลบแอดมินคนอื่นๆ")
         with st.form("first_admin_form"):
-            new_u = st.text_input("ตั้ง Username")
+            new_u = st.text_input("ตั้ง Username (แนะนำ: administrator)")
             new_p = st.text_input("ตั้ง Password", type="password")
             if st.form_submit_button("บันทึก Admin คนแรก", type="primary"):
                 if new_u and new_p:
@@ -195,7 +197,7 @@ menu = ["📝 จองใหม่", "📅 ตารางงาน (Real-time)
 choice = st.sidebar.selectbox("เมนูจัดการระบบ", menu)
 
 # ==========================================
-# 5. หน้าจองใหม่ (BOOKING) - ยึดแบบเดิม 100%
+# 5. หน้าจองใหม่ (BOOKING)
 # ==========================================
 if choice == "📝 จองใหม่":
     st.markdown('<div class="main-title">ระบบจองรถยนต์และห้องประชุม Online</div>', unsafe_allow_html=True)
@@ -365,6 +367,9 @@ if choice == "📝 จองใหม่":
     d3.metric("สถานะฐานข้อมูล", "Connected")
     st.markdown("---")
 
+    # --- เพิ่มข้อความกระพริบสีแดงเตือนก่อนจอง ---
+    st.markdown('<div class="blink" style="text-align:center; font-size:22px; margin-bottom: 20px;">หลังการใช้งานเสร็จกลับมาให้คะแนนคนขับรถทุกครั้ง!!</div>', unsafe_allow_html=True)
+
     col1, col2 = st.columns(2)
     with col1:
         cat = st.radio("ประเภททรัพยากร", ["รถยนต์", "ห้องประชุม"], horizontal=True)
@@ -504,7 +509,8 @@ elif choice == "⭐ ประเมินการใช้งาน":
     st.subheader("⭐ ประเมินการปฏิบัติงานพนักงานขับรถ")
     now_iso = (datetime.utcnow() + timedelta(hours=7)).isoformat()
     try:
-        res = supabase.table("bookings").select("*").eq("status", "Approved").in_("resource", SYS_CARS).lt("end_time", now_iso).execute()
+        # ฟิลเตอร์ดึงเฉพาะรายการตั้งแต่ 1 กรกฎาคม 2026 เป็นต้นมา
+        res = supabase.table("bookings").select("*").eq("status", "Approved").in_("resource", SYS_CARS).lt("end_time", now_iso).gte("end_time", "2026-07-01T00:00:00").execute()
         data = res.data
         unrated = [d for d in data if not d.get("is_rated")]
         
@@ -657,7 +663,8 @@ elif choice == "⚙️ ตั้งค่าระบบ (Admin)":
                 new_depts = st.text_area("🏢 รายชื่อแผนก", sys_settings.get('dept_list', ''))
                 
                 st.markdown("---")
-                st.markdown("##### 🔐 การตั้งค่า LINE Bot (สำหรับนักพัฒนา)")
+                st.markdown("##### 🔐 การตั้งค่า LINE Bot")
+                new_bot_id = st.text_input("LINE Bot ID (ใช้โชว์ที่เมนูด้านซ้ายหน้าเว็บ เช่น @871fsfnr)", sys_settings.get('line_bot_id', '@871fsfnr'))
                 new_token = st.text_input("LINE Access Token", sys_settings.get('line_token', ''))
                 new_secret = st.text_input("LINE Secret", sys_settings.get('line_secret', ''))
                 new_group = st.text_input("LINE Group ID (ห้องแชทที่ให้แจ้งเตือน)", sys_settings.get('group_id', ''))
@@ -672,19 +679,21 @@ elif choice == "⚙️ ตั้งค่าระบบ (Admin)":
                             if update_id == 0:
                                 supabase.table("app_settings").insert({
                                     "car_list": new_cars, "room_list": new_rooms, "dept_list": new_depts,
-                                    "line_token": new_token, "line_secret": new_secret, "group_id": new_group
+                                    "line_token": new_token, "line_secret": new_secret, "group_id": new_group,
+                                    "line_bot_id": new_bot_id
                                 }).execute()
                             else:
                                 supabase.table("app_settings").update({
                                     "car_list": new_cars, "room_list": new_rooms, "dept_list": new_depts,
-                                    "line_token": new_token, "line_secret": new_secret, "group_id": new_group
+                                    "line_token": new_token, "line_secret": new_secret, "group_id": new_group,
+                                    "line_bot_id": new_bot_id
                                 }).eq("id", update_id).execute()
                             
                             st.success("✅ บันทึกข้อมูลตั้งค่าสำเร็จ!")
                             time.sleep(2)
                             st.rerun()
                         except Exception as e:
-                            st.error(f"❌ บันทึกไม่สำเร็จ กรุณาเช็คว่าตาราง app_settings มีคอลัมน์ id และตั้งเป็น Primary แล้ว: {e}")
+                            st.error(f"❌ บันทึกไม่สำเร็จ: {e} \n(คำแนะนำ: โปรดเช็คว่าตาราง app_settings มีคอลัมน์ชื่อ line_bot_id หรือยัง)")
                     else:
                         st.error("❌ กรุณาติ๊กถูกที่ช่อง 'ยืนยันการแก้ไขข้อมูล' ก่อนกดบันทึกครับ")
         
@@ -697,30 +706,38 @@ elif choice == "⚙️ ตั้งค่าระบบ (Admin)":
                 for a in admins:
                     col_u, col_d = st.columns([4, 1])
                     col_u.markdown(f"👤 **{a['username']}**")
-                    if col_d.button("🗑️ ลบ", key=f"del_adm_{a.get('id', a['username'])}", use_container_width=True):
-                        if len(admins) == 1:
-                            st.error("❌ ไม่สามารถลบ Admin คนสุดท้ายได้")
-                        else:
-                            try:
-                                supabase.table("app_admins").delete().eq("id", a['id']).execute()
-                                st.rerun()
-                            except Exception as e: st.error(f"ลบไม่สำเร็จ เช็ค Primary Key ของตาราง app_admins: {e}")
+                    
+                    if st.session_state["admin_user"] == "administrator":
+                        if col_d.button("🗑️ ลบ", key=f"del_adm_{a.get('id', a['username'])}", use_container_width=True):
+                            if len(admins) == 1:
+                                st.error("❌ ไม่สามารถลบ Admin คนสุดท้ายได้")
+                            elif a['username'] == "administrator":
+                                st.error("❌ ไม่สามารถลบ Super Admin (administrator) ได้")
+                            else:
+                                try:
+                                    supabase.table("app_admins").delete().eq("id", a['id']).execute()
+                                    st.rerun()
+                                except Exception as e: st.error(f"ลบไม่สำเร็จ: {e}")
+            
             st.markdown("---")
-            st.markdown("##### ➕ เพิ่ม Admin ใหม่")
-            with st.form("add_admin_form"):
-                n_user = st.text_input("Username ใหม่")
-                n_pass = st.text_input("Password ใหม่", type="password")
-                if st.form_submit_button("บันทึก Admin ใหม่"):
-                    if not n_user or not n_pass:
-                        st.error("กรุณากรอกข้อมูลให้ครบถ้วน")
-                    else:
-                        is_dup = any(x['username'] == n_user for x in admins)
-                        if is_dup:
-                            st.error("❌ Username นี้มีอยู่แล้วในระบบ")
+            if st.session_state["admin_user"] == "administrator":
+                st.markdown("##### ➕ เพิ่ม Admin ใหม่")
+                with st.form("add_admin_form"):
+                    n_user = st.text_input("Username ใหม่")
+                    n_pass = st.text_input("Password ใหม่", type="password")
+                    if st.form_submit_button("บันทึก Admin ใหม่"):
+                        if not n_user or not n_pass:
+                            st.error("กรุณากรอกข้อมูลให้ครบถ้วน")
                         else:
-                            try:
-                                supabase.table("app_admins").insert({"username": n_user, "password": n_pass}).execute()
-                                st.success(f"✅ เพิ่ม Admin {n_user} สำเร็จ!")
-                                time.sleep(1)
-                                st.rerun()
-                            except Exception as e: st.error(f"เพิ่มไม่สำเร็จ: {e}")
+                            is_dup = any(x['username'] == n_user for x in admins)
+                            if is_dup:
+                                st.error("❌ Username นี้มีอยู่แล้วในระบบ")
+                            else:
+                                try:
+                                    supabase.table("app_admins").insert({"username": n_user, "password": n_pass}).execute()
+                                    st.success(f"✅ เพิ่ม Admin {n_user} สำเร็จ!")
+                                    time.sleep(1)
+                                    st.rerun()
+                                except Exception as e: st.error(f"เพิ่มไม่สำเร็จ: {e}")
+            else:
+                st.info("🔒 สิทธิ์การ 'เพิ่ม' หรือ 'ลบ' ผู้ดูแลระบบ สงวนไว้สำหรับ Username: **administrator** เท่านั้น")
