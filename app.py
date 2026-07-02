@@ -66,7 +66,7 @@ def load_settings():
         }
 
 sys_settings = load_settings()
-CURRENT_BOT_ID = sys_settings.get('line_bot_id', '@871fsfnr')
+CURRENT_BOT_ID = sys_settings.get('line_bot_id', '@871fsfnr') or '@871fsfnr'
 LINE_ADD_FRIEND_URL = f"https://line.me/R/ti/p/{CURRENT_BOT_ID}"
 
 try:
