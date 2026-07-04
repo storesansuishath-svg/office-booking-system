@@ -5,6 +5,7 @@ from datetime import datetime, timedelta
 import requests
 import time
 import io
+import difflib
 
 # ==========================================
 # 1. การเชื่อมต่อ DATABASE & CONFIG
@@ -95,11 +96,29 @@ def check_booking_conflict(resource, start_time_iso, end_time_iso):
     return False, None, None
 
 def get_unrated_bookings(name, dept):
-    # เช็คเฉพาะรายการรถของ "คนเดิม" โดยจับคู่ ชื่อ + แผนก ให้ตรงกับรายการจองที่ยังไม่ได้ประเมิน
+    # ปิดช่องโหว่: ดึงรายการรถทุกคันของ "แผนก" นี้ ที่ยังไม่ได้ประเมิน แล้วนำชื่อมาเช็คความคล้าย >= 80%
     try:
         now_iso = (datetime.utcnow() + timedelta(hours=7)).isoformat()
-        res = supabase.table("bookings").select("*").eq("requester", name).eq("dept", dept).eq("status", "Approved").in_("resource", SYS_CARS).lt("end_time", now_iso).gte("end_time", "2026-07-01T00:00:00").execute()
-        return [d for d in res.data if not d.get("is_rated")]
+        
+        # ดึงข้อมูลทั้งหมดที่ตรงกับ "แผนก" และเป็น "รถยนต์" โดยเอาการเช็คชื่อที่เป๊ะๆ (eq) ออกไปเช็คใน Python แทน
+        res = supabase.table("bookings").select("*").eq("dept", dept).eq("status", "Approved").in_("resource", SYS_CARS).lt("end_time", now_iso).gte("end_time", "2026-07-01T00:00:00").execute()
+        
+        matched_unrated = []
+        for d in res.data:
+            # เช็คเฉพาะรายการที่ยังไม่ได้ประเมิน
+            if not d.get("is_rated"):
+                # ลบช่องว่างทั้งหมดออก และแปลงเป็นตัวพิมพ์เล็ก เพื่อป้องกันการเคาะ Spacebar และความต่างของขนาดตัวอักษร
+                db_name = str(d.get("requester", "")).replace(" ", "").lower()
+                input_name = str(name).replace(" ", "").lower()
+                
+                # ใช้ SequenceMatcher คำนวณเปอร์เซ็นต์ความคล้ายคลึงของชื่อ
+                similarity = difflib.SequenceMatcher(None, db_name, input_name).ratio()
+                
+                # หากความคล้ายคลึงของชื่อมากกว่าหรือเท่ากับ 80% ให้ถือว่าเป็นคนเดียวกันที่พยายามจองใหม่
+                if similarity >= 0.80:
+                    matched_unrated.append(d)
+                    
+        return matched_unrated
     except:
         return []
     
