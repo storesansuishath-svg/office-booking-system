@@ -96,27 +96,18 @@ def check_booking_conflict(resource, start_time_iso, end_time_iso):
     return False, None, None
 
 def get_unrated_bookings(name, dept):
-    # ปิดช่องโหว่: ดึงรายการรถทุกคันของ "แผนก" นี้ ที่ยังไม่ได้ประเมิน แล้วนำชื่อมาเช็คความคล้าย >= 80%
+    # ยาแรง: ล็อกทั้งแผนก หากมีใครคนใดคนหนึ่งในแผนกนี้ค้างประเมิน จะไม่ให้คนในแผนกนี้จองรถใหม่เด็ดขาด
     try:
         now_iso = (datetime.utcnow() + timedelta(hours=7)).isoformat()
         
-        # ดึงข้อมูลทั้งหมดที่ตรงกับ "แผนก" และเป็น "รถยนต์" โดยเอาการเช็คชื่อที่เป๊ะๆ (eq) ออกไปเช็คใน Python แทน
+        # ดึงข้อมูลการจองรถยนต์ทั้งหมดของแผนกนี้ที่สิ้นสุดแล้วตั้งแต่วันที่ 1-Jul-2026
         res = supabase.table("bookings").select("*").eq("dept", dept).eq("status", "Approved").in_("resource", SYS_CARS).lt("end_time", now_iso).gte("end_time", "2026-07-01T00:00:00").execute()
         
         matched_unrated = []
         for d in res.data:
-            # เช็คเฉพาะรายการที่ยังไม่ได้ประเมิน
+            # ถ้าพบรายการไหนในแผนกนี้ที่ยังไม่ได้ประเมิน (is_rated เป็น False) ให้จับล็อกทันที
             if not d.get("is_rated"):
-                # ลบช่องว่างทั้งหมดออก และแปลงเป็นตัวพิมพ์เล็ก เพื่อป้องกันการเคาะ Spacebar และความต่างของขนาดตัวอักษร
-                db_name = str(d.get("requester", "")).replace(" ", "").lower()
-                input_name = str(name).replace(" ", "").lower()
-                
-                # ใช้ SequenceMatcher คำนวณเปอร์เซ็นต์ความคล้ายคลึงของชื่อ
-                similarity = difflib.SequenceMatcher(None, db_name, input_name).ratio()
-                
-                # หากความคล้ายคลึงของชื่อมากกว่าหรือเท่ากับ 80% ให้ถือว่าเป็นคนเดียวกันที่พยายามจองใหม่
-                if similarity >= 0.80:
-                    matched_unrated.append(d)
+                matched_unrated.append(d)
                     
         return matched_unrated
     except:
@@ -395,8 +386,29 @@ if choice == "📝 จองใหม่":
     d3.metric("สถานะฐานข้อมูล", "Connected")
     st.markdown("---")
 
-    # --- เพิ่มข้อความกระพริบสีแดงเตือนก่อนจอง ---
+    # --- เพิ่มข้อความกระพริบสีแดงเตือนก่อนจอง (ของเดิมในไฟล์ของคุณ) ---
     st.markdown('<div class="blink" style="text-align:center; font-size:22px; margin-bottom: 20px;">หลังการใช้งานเสร็จกลับมาให้คะแนนคนขับรถทุกครั้ง!!</div>', unsafe_allow_html=True)
+
+    # +++ โค้ดส่วนกระพริบโชว์รายชื่อผู้ค้างประเมินเพื่อกดดัน +++
+    try:
+        now_iso_alert = (datetime.utcnow() + timedelta(hours=7)).isoformat()
+        res_alert = supabase.table("bookings").select("requester, dept, is_rated").eq("status", "Approved").in_("resource", SYS_CARS).lt("end_time", now_iso_alert).gte("end_time", "2026-07-01T00:00:00").execute()
+        
+        if res_alert.data:
+            unrated_list = set()
+            for d in res_alert.data:
+                if not d.get("is_rated"):
+                    req = str(d.get("requester", "")).strip()
+                    dpt = str(d.get("dept", "")).strip()
+                    if req:
+                        unrated_list.add(f"{req} ({dpt})")
+            
+            if unrated_list:
+                alert_text = ", ".join(sorted(unrated_list))
+                # ตัวอักษรใหญ่ขึ้น 20% (font-size: 26px)
+                st.markdown(f'<div class="blink" style="text-align:center; font-size:26px; margin-bottom: 20px;">⚠️ รายชื่อผู้ที่ค้างการประเมิน: {alert_text} ⚠️</div>', unsafe_allow_html=True)
+    except:
+        pass
 
     col1, col2 = st.columns(2)
     with col1:
