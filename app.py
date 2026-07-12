@@ -52,7 +52,6 @@ def load_settings():
                 "car_list": "Civic (ตุ้ม),Civic (บอล),Camry (เนก),MG,MG (เนก)",
                 "room_list": "ห้องชั้น 1 (ห้องใหญ่),ห้องชั้น 2,ห้อง VIP,ห้องชั้นลอย,ห้อง Production",
                 "dept_list": "AC,HR,Sales,QA,PE,Fac,Loading,Unload,Coating,Repair,Delivery,Assembly,QC - MS,Metal sheet,Factory 1,Factory 2,Admin (JP)",
-                "line_bot_id": "@871fsfnr"
             }
             supabase.table("app_settings").insert(default_data).execute()
             return supabase.table("app_settings").select("*").execute().data[0]
@@ -66,11 +65,9 @@ def load_settings():
             "car_list": "Civic (ตุ้ม),Civic (บอล),Camry (เนก),MG,MG (เนก)",
             "room_list": "ห้องชั้น 1 (ห้องใหญ่),ห้องชั้น 2,ห้อง VIP,ห้องชั้นลอย,ห้อง Production",
             "dept_list": "AC,HR,Sales,QA,PE,Fac,Loading,Unload,Coating,Repair,Delivery,Assembly,QC - MS,Metal sheet,Factory 1,Factory 2,Admin (JP)",
-            "line_bot_id": "@871fsfnr"
         }
 
 sys_settings = load_settings()
-CURRENT_BOT_ID = sys_settings.get('line_bot_id', '@871fsfnr') or '@871fsfnr'
 LINE_ADD_FRIEND_URL = f"https://line.me/R/ti/p/{CURRENT_BOT_ID}"
 
 try:
