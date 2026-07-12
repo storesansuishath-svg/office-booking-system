@@ -14,6 +14,9 @@ SUPABASE_URL = "https://qejqynbxdflwebzzwfzu.supabase.co"
 SUPABASE_KEY = "sb_publishable_hvNQEPvuEAlXfVeCzpy7Ug_kzvihQqq"
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
+CURRENT_BOT_ID = "@851jrsed"  
+LINE_ADD_FRIEND_URL = f"https://line.me/R/ti/p/{CURRENT_BOT_ID}"
+
 st.set_page_config(page_title="ระบบจองรถและห้องประชุม - Sansuisha", layout="wide")
 
 st.markdown("""
@@ -705,14 +708,7 @@ elif choice == "⚙️ ตั้งค่าระบบ (Admin)":
                 new_cars = st.text_area("🚗 รายชื่อรถยนต์ (และชื่อคนขับ)", sys_settings.get('car_list', ''))
                 new_rooms = st.text_area("🏢 รายชื่อห้องประชุม", sys_settings.get('room_list', ''))
                 new_depts = st.text_area("🏢 รายชื่อแผนก", sys_settings.get('dept_list', ''))
-                
-                st.markdown("---")
-                st.markdown("##### 🔐 การตั้งค่า LINE Bot")
-                new_bot_id = st.text_input("LINE Bot ID (ใช้โชว์ที่เมนูด้านซ้ายหน้าเว็บ เช่น @871fsfnr)", sys_settings.get('line_bot_id', '@871fsfnr'))
-                new_token = st.text_input("LINE Access Token", sys_settings.get('line_token', ''))
-                new_secret = st.text_input("LINE Secret", sys_settings.get('line_secret', ''))
-                new_group = st.text_input("LINE Group ID (ห้องแชทที่ให้แจ้งเตือน)", sys_settings.get('group_id', ''))
-                
+                                             
                 st.warning("⚠️ การแก้ไขข้อมูลนี้จะส่งผลต่อระบบทั้งหมดทันที กรุณาตรวจสอบให้ถูกต้องก่อนกดบันทึก")
                 confirm = st.checkbox("☑️ ฉันตรวจสอบข้อมูลแล้ว และยืนยันการแก้ไขข้อมูล")
                 
