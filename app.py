@@ -488,6 +488,9 @@ elif choice == "📅 ตารางงาน (Real-time)":
                         n_res = e_col1.selectbox("รายการ / Resource", all_res, index=res_idx)
                         n_req = e_col1.text_input("ผู้จอง / Name", str(row['requester']))
                         n_dest = e_col1.text_input("ปลายทาง / Destination", str(row.get('destination', '-')))
+                        try: dept_idx = SYS_DEPTS.index(row.get('dept', ''))
+                        except: dept_idx = 0
+                        n_dept = e_col1.selectbox("แผนก / Department", SYS_DEPTS, index=dept_idx)
                         
                         dt_s = pd.to_datetime(row['start_time'])
                         dt_e = pd.to_datetime(row['end_time'])
@@ -506,7 +509,7 @@ elif choice == "📅 ตารางงาน (Real-time)":
                                 f_end = datetime.combine(n_d_e, datetime.strptime(fe, "%H:%M").time()).isoformat()
                                 
                                 supabase.table("bookings").update({
-                                    "resource": n_res, "requester": n_req, "destination": n_dest, 
+                                    "resource": n_res, "requester": n_req, "destination": n_dest,"dept": n_dept,
                                     "purpose": n_purp, "start_time": f_start, "end_time": f_end
                                 }).eq("id", row['id']).execute()
                                 
