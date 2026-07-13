@@ -51,7 +51,7 @@ def load_settings():
                 "group_id": "Cad74a32468ca40051bd7071a6064660d",
                 "car_list": "Civic (ตุ้ม),Civic (บอล),Camry (เนก),MG,MG (เนก)",
                 "room_list": "ห้องชั้น 1 (ห้องใหญ่),ห้องชั้น 2,ห้อง VIP,ห้องชั้นลอย,ห้อง Production",
-                "dept_list": "AC,HR,Sales,QA,PE,Fac,Loading,Unload,Coating,Repair,Delivery,Assembly,QC - MS,Metal sheet,Factory 1,Factory 2,Admin (JP)",
+                "dept_list": "AC,HR,Sales,QA,PE,Fac,Loading,Unload,Coating,Repair,Delivery,Assembly,QC - MS,Metal sheet,Factory 1,Factory 2,Admin (JP),SAP",
             }
             supabase.table("app_settings").insert(default_data).execute()
             return supabase.table("app_settings").select("*").execute().data[0]
@@ -64,7 +64,7 @@ def load_settings():
             "group_id": "Cad74a32468ca40051bd7071a6064660d",
             "car_list": "Civic (ตุ้ม),Civic (บอล),Camry (เนก),MG,MG (เนก)",
             "room_list": "ห้องชั้น 1 (ห้องใหญ่),ห้องชั้น 2,ห้อง VIP,ห้องชั้นลอย,ห้อง Production",
-            "dept_list": "AC,HR,Sales,QA,PE,Fac,Loading,Unload,Coating,Repair,Delivery,Assembly,QC - MS,Metal sheet,Factory 1,Factory 2,Admin (JP)",
+            "dept_list": "AC,HR,Sales,QA,PE,Fac,Loading,Unload,Coating,Repair,Delivery,Assembly,QC - MS,Metal sheet,Factory 1,Factory 2,Admin (JP),SAP",
         }
 
 sys_settings = load_settings()
@@ -77,7 +77,7 @@ try:
 except:
     SYS_CARS = ["Civic (ตุ้ม)", "Civic (บอล)", "Camry (เนก)", "MG", "MG (เนก)"]
     SYS_ROOMS = ["ห้องชั้น 1 (ห้องใหญ่)", "ห้องชั้น 2", "ห้อง VIP", "ห้องชั้นลอย", "ห้อง Production"]
-    SYS_DEPTS = ["AC","HR","Sales","QA","PE","Fac","Loading","Unload","Coating","Repair","Delivery","Assembly","QC - MS","Metal sheet","Factory 1","Factory 2","Admin (JP)"]
+    SYS_DEPTS = ["AC","HR","Sales","QA","PE","Fac","Loading","Unload","Coating","Repair","Delivery","Assembly","QC - MS","Metal sheet","Factory 1","Factory 2","Admin (JP),SAP"]
 
 def format_time_string(t_raw):
     clean = str(t_raw).replace(":", "").strip()
