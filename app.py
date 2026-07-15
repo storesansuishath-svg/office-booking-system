@@ -6,6 +6,8 @@ import requests
 import time
 import io
 import difflib
+import calendar as calendar_module
+import html
 
 # ==========================================
 # 1. การเชื่อมต่อ DATABASE (Supabase คงเดิม 100%)
@@ -110,6 +112,82 @@ def auto_delete_old_bookings():
     try: supabase.table("bookings").delete().lt("end_time", threshold).execute()
     except: pass
 
+def _to_local_naive(value):
+    """Convert database timestamps for calendar display without new packages."""
+    dt = pd.to_datetime(value)
+    if getattr(dt, "tzinfo", None) is not None:
+        dt = dt.tz_convert("Asia/Bangkok").tz_localize(None)
+    return dt.to_pydatetime()
+
+def _short_resource_name(resource):
+    return resource.replace("ห้อง", "ห.").replace("ชั้น", "ช.")
+
+def load_month_usage(resources, month_start, next_month):
+    """Group approved bookings by date and resource for the month calendar."""
+    rows = supabase.table("bookings").select("resource,start_time,end_time").eq("status", "Approved") \
+        .in_("resource", resources).gt("end_time", month_start.isoformat()) \
+        .lt("start_time", next_month.isoformat()).execute().data
+    usage = {}
+    for row in rows:
+        start = _to_local_naive(row["start_time"])
+        end = _to_local_naive(row["end_time"])
+        day_cursor = max(start.date(), month_start.date())
+        final_day = min(end.date(), (next_month - timedelta(days=1)).date())
+        while day_cursor <= final_day:
+            day_start = datetime.combine(day_cursor, datetime.min.time())
+            day_end = day_start + timedelta(days=1)
+            slot_start = max(start, day_start)
+            slot_end = min(end, day_end)
+            if slot_start < slot_end:
+                usage.setdefault(day_cursor, {}).setdefault(row["resource"], []).append(
+                    f"{slot_start:%H:%M}-{slot_end:%H:%M}"
+                )
+            day_cursor += timedelta(days=1)
+    return usage
+
+def render_month_calendar():
+    """First-page availability calendar; cars are selected by default."""
+    st.markdown("---")
+    st.subheader("🗓️ ปฏิทินการใช้งาน")
+    st.caption("เลือกเดือนและประเภทเพื่อดูจำนวนทรัพยากรที่ใช้งาน พร้อมช่วงเวลาที่จองแล้ว")
+    left, right = st.columns([1, 2])
+    with left:
+        chosen_date = st.date_input("เลือกเดือน", value=datetime.now().date(), key="calendar_month_picker")
+    with right:
+        calendar_type = st.radio("แสดงปฏิทิน", ["รถยนต์", "ห้องประชุม"], horizontal=True, key="calendar_type")
+    resources = SYS_CARS if calendar_type == "รถยนต์" else SYS_ROOMS
+    month_start = datetime(chosen_date.year, chosen_date.month, 1)
+    next_month = (month_start.replace(day=28) + timedelta(days=4)).replace(day=1)
+    try:
+        usage = load_month_usage(resources, month_start, next_month)
+    except Exception as exc:
+        st.error(f"ไม่สามารถโหลดปฏิทินได้: {exc}")
+        return
+
+    st.markdown(f"#### {calendar_module.month_name[chosen_date.month]} {chosen_date.year} — {calendar_type}")
+    headers = st.columns(7)
+    for col, label in zip(headers, ["จันทร์", "อังคาร", "พุธ", "พฤหัสบดี", "ศุกร์", "เสาร์", "อาทิตย์"]):
+        col.markdown(f"**{label}**")
+    for week in calendar_module.monthcalendar(chosen_date.year, chosen_date.month):
+        columns = st.columns(7)
+        for column, day in zip(columns, week):
+            with column:
+                if day == 0:
+                    st.write("")
+                    continue
+                current_date = datetime(chosen_date.year, chosen_date.month, day).date()
+                used_resources = usage.get(current_date, {})
+                with st.container(border=True):
+                    st.markdown(f"**{day}**")
+                    if not used_resources:
+                        st.caption(f"🟢 ว่าง {len(resources)}/{len(resources)}")
+                    else:
+                        st.caption(f"🔴 ใช้งาน {len(used_resources)}/{len(resources)}")
+                        for resource, slots in sorted(used_resources.items()):
+                            st.caption(f"• {_short_resource_name(resource)}")
+                            st.caption("  " + ", ".join(sorted(slots)))
+    st.caption("ตัวเลข “ใช้งาน” คือจำนวนรถหรือห้องที่มีรายการอนุมัติในวันนั้น; เวลาที่แสดงคือช่วงเวลาที่ถูกจองแล้ว")
+
 # ==========================================
 # 5. ระบบ LOGIN & AUTHENTICATION (เชื่อม app_admins)
 # ==========================================
@@ -165,7 +243,8 @@ def check_admin_login():
 # ==========================================
 # 6. SIDEBAR & NAVIGATION
 # ==========================================
-auto_delete_old_bookings()
+# Keep historical bookings; data retention should run as a reviewed scheduled
+# database job, not every time a visitor opens the web page.
 try:
     pending_items = supabase.table("bookings").select("id").eq("status", "Pending").execute().data
     pending_count = len(pending_items)
@@ -345,6 +424,7 @@ if choice == "📝 จองใหม่":
     </div>
     """
     st.markdown(css_style + html_content, unsafe_allow_html=True)
+    render_month_calendar()
     
     # --- สถิติ ---
     try:
@@ -374,7 +454,7 @@ if choice == "📝 จองใหม่":
                     if req: unrated_list.add(f"{req} ({dpt})")
             
             if unrated_list:
-                alert_text = ", ".join(sorted(unrated_list))
+                alert_text = html.escape(", ".join(sorted(unrated_list)))
                 st.markdown(f'<div class="blink" style="text-align:center; font-size:26px; margin-bottom: 20px;">⚠️ รายชื่อผู้ที่ค้างการประเมิน: {alert_text} ⚠️</div>', unsafe_allow_html=True)
     except: pass
 
