@@ -112,15 +112,36 @@ def auto_delete_old_bookings():
     try: supabase.table("bookings").delete().lt("end_time", threshold).execute()
     except: pass
 
-def _to_local_naive(value):
-    """Convert database timestamps for calendar display without new packages."""
+def _to_calendar_datetime(value):
+    """Use the exact wall-clock value stored by the existing application.
+
+    The original pages display Supabase timestamps without timezone conversion.
+    The calendar must use the same rule; otherwise an ISO value ending in +00:00
+    would be shifted by seven hours only on the new calendar page.
+    """
     dt = pd.to_datetime(value)
     if getattr(dt, "tzinfo", None) is not None:
-        dt = dt.tz_convert("Asia/Bangkok").tz_localize(None)
+        dt = dt.tz_localize(None)
     return dt.to_pydatetime()
 
 def _short_resource_name(resource):
     return resource.replace("ห้อง", "ห.").replace("ชั้น", "ช.")
+
+def get_calendar_resources(calendar_type):
+    """Read the active resource list from the database, with safe fallback.
+
+    This keeps the calendar's denominator in sync when an admin changes the
+    car_list or room_list in app_settings, instead of relying on old constants.
+    """
+    field = "car_list" if calendar_type == "รถยนต์" else "room_list"
+    fallback = SYS_CARS if calendar_type == "รถยนต์" else SYS_ROOMS
+    try:
+        settings = supabase.table("app_settings").select(field).eq("id", 1).execute().data
+        raw_list = settings[0].get(field, "") if settings else ""
+        resources = [item.strip() for item in raw_list.split(",") if item.strip()]
+        return resources or fallback
+    except Exception:
+        return fallback
 
 def load_month_usage(resources, month_start, next_month):
     """Group approved bookings by date and resource for the month calendar."""
@@ -129,8 +150,8 @@ def load_month_usage(resources, month_start, next_month):
         .lt("start_time", next_month.isoformat()).execute().data
     usage = {}
     for row in rows:
-        start = _to_local_naive(row["start_time"])
-        end = _to_local_naive(row["end_time"])
+        start = _to_calendar_datetime(row["start_time"])
+        end = _to_calendar_datetime(row["end_time"])
         day_cursor = max(start.date(), month_start.date())
         final_day = min(end.date(), (next_month - timedelta(days=1)).date())
         while day_cursor <= final_day:
@@ -155,7 +176,7 @@ def render_month_calendar():
         chosen_date = st.date_input("เลือกเดือน", value=datetime.now().date(), key="calendar_month_picker")
     with right:
         calendar_type = st.radio("แสดงปฏิทิน", ["รถยนต์", "ห้องประชุม"], horizontal=True, key="calendar_type")
-    resources = SYS_CARS if calendar_type == "รถยนต์" else SYS_ROOMS
+    resources = get_calendar_resources(calendar_type)
     month_start = datetime(chosen_date.year, chosen_date.month, 1)
     next_month = (month_start.replace(day=28) + timedelta(days=4)).replace(day=1)
     try:
@@ -182,7 +203,8 @@ def render_month_calendar():
                     if not used_resources:
                         st.caption(f"🟢 ว่าง {len(resources)}/{len(resources)}")
                     else:
-                        st.caption(f"🔴 ใช้งาน {len(used_resources)}/{len(resources)}")
+                        booking_count = sum(len(slots) for slots in used_resources.values())
+                        st.caption(f"🔴 ใช้งาน {len(used_resources)}/{len(resources)} · {booking_count} รายการ")
                         for resource, slots in sorted(used_resources.items()):
                             st.caption(f"• {_short_resource_name(resource)}")
                             st.caption("  " + ", ".join(sorted(slots)))
