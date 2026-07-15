@@ -107,10 +107,18 @@ def send_line_notification(booking_id, resource, name, dept, t_start, t_end, pur
         requests.post(render_url, json=payload, timeout=30)
     except: pass
 
+@st.cache_data(ttl=86400, show_spinner=False)
 def auto_delete_old_bookings():
-    threshold = (datetime.now() - timedelta(days=45)).isoformat()
-    try: supabase.table("bookings").delete().lt("end_time", threshold).execute()
-    except: pass
+    """Delete completed/stale booking rows older than 45 days, once per day."""
+    threshold = (datetime.utcnow() + timedelta(hours=7) - timedelta(days=45)).isoformat()
+    try:
+        result = supabase.table("bookings").delete().lt("end_time", threshold).execute()
+        return {"ok": True, "deleted": len(result.data or []), "threshold": threshold}
+    except Exception as exc:
+        # Keep the web available, but make the failure visible in Render/
+        # Streamlit logs instead of silently disabling data retention.
+        print(f"[retention] 45-day cleanup failed: {exc}")
+        return {"ok": False, "deleted": 0, "threshold": threshold}
 
 def _to_calendar_datetime(value):
     """Use the exact wall-clock value stored by the existing application.
@@ -265,8 +273,9 @@ def check_admin_login():
 # ==========================================
 # 6. SIDEBAR & NAVIGATION
 # ==========================================
-# Keep historical bookings; data retention should run as a reviewed scheduled
-# database job, not every time a visitor opens the web page.
+# Retain only the latest 45 days. Caching limits cleanup to once per day per
+# running Streamlit instance instead of once per widget interaction/rerun.
+auto_delete_old_bookings()
 try:
     pending_items = supabase.table("bookings").select("id").eq("status", "Pending").execute().data
     pending_count = len(pending_items)
@@ -291,15 +300,17 @@ if st.session_state["admin_logged_in"]:
     st.sidebar.markdown("---")
 
 # เมนูหลัก (ลบเมนูตั้งค่าระบบออกแล้ว)
-menu = ["📝 จองใหม่", "📅 ตารางงาน (Real-time)", "⭐ ประเมินการใช้งาน", "🔑 Admin (อนุมัติ)", "📊 รายงานประจำเดือน"]
+menu = ["🏠 หน้าแรก", "📝 จองใหม่", "📅 ตารางงาน (Real-time)", "⭐ ประเมินการใช้งาน", "🔑 Admin (อนุมัติ)", "📊 รายงานประจำเดือน"]
 choice = st.sidebar.selectbox("เมนูจัดการระบบ", menu)
 
 # ==========================================
 # 7. หน้าจองใหม่ (BOOKING)
 # ==========================================
-if choice == "📝 จองใหม่":
-    st.markdown('<div class="main-title">ระบบจองรถยนต์และห้องประชุม Online</div>', unsafe_allow_html=True)
-    st.markdown('##### 📋 ข้อมูลรถและคนขับ')
+if choice in ["🏠 หน้าแรก", "📝 จองใหม่"]:
+    is_home_page = choice == "🏠 หน้าแรก"
+    if is_home_page:
+        st.markdown('<div class="main-title">ระบบจองรถยนต์และห้องประชุม Online</div>', unsafe_allow_html=True)
+        st.markdown('##### 📋 ข้อมูลรถและคนขับ')
     
     # --- คำนวณสถานะ Real-time ---
     now_dt = datetime.utcnow() + timedelta(hours=7)
@@ -445,20 +456,20 @@ if choice == "📝 จองใหม่":
     </div>
     </div>
     """
-    st.markdown(css_style + html_content, unsafe_allow_html=True)
-    render_month_calendar()
-    
     # --- สถิติ ---
     try:
         today_approved_res = supabase.table("bookings").select("id").eq("status", "Approved").gte("start_time", t_today_start).lte("start_time", t_today_end).execute()
         today_approved_count = len(today_approved_res.data) if today_approved_res.data else 0
     except: today_approved_count = 0
     
-    d1, d2, d3 = st.columns(3)
-    d1.metric("รายการจองวันนี้", f"{today_approved_count} รายการ")
-    d2.metric("รอพี่อนุมัติ", f"{pending_count} รายการ")
-    d3.metric("สถานะฐานข้อมูล", "Connected")
-    st.markdown("---")
+    if is_home_page:
+        st.markdown(css_style + html_content, unsafe_allow_html=True)
+        render_month_calendar()
+        d1, d2, d3 = st.columns(3)
+        d1.metric("รายการจองวันนี้", f"{today_approved_count} รายการ")
+        d2.metric("รอพี่อนุมัติ", f"{pending_count} รายการ")
+        d3.metric("สถานะฐานข้อมูล", "Connected")
+        st.stop()
 
     st.markdown('<div class="blink" style="text-align:center; font-size:22px; margin-bottom: 20px;">หลังการใช้งานเสร็จกลับมาให้คะแนนคนขับรถทุกครั้ง!!</div>', unsafe_allow_html=True)
 
@@ -485,7 +496,7 @@ if choice == "📝 จองใหม่":
         cat = st.radio("ประเภททรัพยากร", ["รถยนต์", "ห้องประชุม"], horizontal=True)
         res_list = SYS_CARS if cat == "รถยนต์" else SYS_ROOMS
         res = st.selectbox("เลือกรายการ", res_list)
-        dest = st.text_input("สถานที่/google Map") if cat == "รถยนต์" else "Office"
+        dest = st.text_input("สถานที่ปลายทาง") if cat == "รถยนต์" else "Office"
         name = st.text_input("ชื่อผู้จอง")
         phone = st.text_input("เบอร์โทรศัพท์")
         dept = st.selectbox("แผนก", SYS_DEPTS)
