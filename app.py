@@ -496,7 +496,7 @@ if choice in ["🏠 หน้าแรก", "📝 จองใหม่"]:
         cat = st.radio("ประเภททรัพยากร", ["รถยนต์", "ห้องประชุม"], horizontal=True)
         res_list = SYS_CARS if cat == "รถยนต์" else SYS_ROOMS
         res = st.selectbox("เลือกรายการ", res_list)
-        dest = st.text_input("สถานที่ปลายทาง") if cat == "รถยนต์" else "Office"
+        dest = st.text_input("สถานที่ปลายทาง / Google Map") if cat == "รถยนต์" else "Office"
         name = st.text_input("ชื่อผู้จอง")
         phone = st.text_input("เบอร์โทรศัพท์")
         dept = st.selectbox("แผนก", SYS_DEPTS)
