@@ -8,6 +8,7 @@ import io
 import difflib
 import calendar as calendar_module
 import html
+import re
 
 # ==========================================
 # 1. การเชื่อมต่อ DATABASE (Supabase คงเดิม 100%)
@@ -326,6 +327,400 @@ def get_calendar_resources(calendar_type):
         return resources or fallback
     except Exception:
         return fallback
+
+
+THAI_DIGIT_TRANSLATION = str.maketrans("๐๑๒๓๔๕๖๗๘๙", "0123456789")
+THAI_MONTH_ALIASES = {
+    "มกราคม": 1, "ม.ค.": 1, "ม.ค": 1,
+    "กุมภาพันธ์": 2, "ก.พ.": 2, "ก.พ": 2,
+    "มีนาคม": 3, "มี.ค.": 3, "มี.ค": 3,
+    "เมษายน": 4, "เม.ย.": 4, "เม.ย": 4,
+    "พฤษภาคม": 5, "พ.ค.": 5, "พ.ค": 5,
+    "มิถุนายน": 6, "มิ.ย.": 6, "มิ.ย": 6,
+    "กรกฎาคม": 7, "ก.ค.": 7, "ก.ค": 7,
+    "สิงหาคม": 8, "ส.ค.": 8, "ส.ค": 8,
+    "กันยายน": 9, "ก.ย.": 9, "ก.ย": 9,
+    "ตุลาคม": 10, "ต.ค.": 10, "ต.ค": 10,
+    "พฤศจิกายน": 11, "พ.ย.": 11, "พ.ย": 11,
+    "ธันวาคม": 12, "ธ.ค.": 12, "ธ.ค": 12,
+}
+RESOURCE_SEARCH_ALIASES = {
+    "Civic (ตุ้ม)": ["civic (ตุ้ม)", "civic ตุ้ม", "ซีวิค ตุ้ม", "ตุ้ม"],
+    "Civic (บอล)": ["civic (บอล)", "civic บอล", "ซีวิค บอล", "บอล"],
+    "Camry (เนก)": ["camry (เนก)", "camry เนก", "แคมรี่ เนก", "คัมรี่ เนก", "camry"],
+    "MG (เนก)": ["mg (เนก)", "mg เนก", "เอ็มจี เนก"],
+    "MG": ["mg", "เอ็มจี", "mg-ep"],
+    "ห้องชั้น 1 (ห้องใหญ่)": ["ห้องชั้น 1", "ห้องใหญ่", "ชั้นหนึ่ง"],
+    "ห้องชั้น 2": ["ห้องชั้น 2", "ชั้นสอง"],
+    "ห้อง VIP": ["ห้อง vip", "vip"],
+    "ห้องชั้นลอย": ["ห้องชั้นลอย", "ชั้นลอย"],
+    "ห้อง Production": ["ห้อง production", "production"],
+}
+
+
+def _normalize_search_text(value):
+    return re.sub(r"\s+", " ", str(value).translate(THAI_DIGIT_TRANSLATION).strip().lower())
+
+
+def _normalize_search_year(raw_year, current_year):
+    if raw_year is None:
+        return current_year
+    year = int(raw_year)
+    if year >= 2400:
+        return year - 543
+    if year < 100:
+        # คนไทยมักใช้ 69 แทน พ.ศ. 2569 แต่ใช้ 26 แทน ค.ศ. 2026 ได้เช่นกัน
+        return 1957 + year if year >= 50 else 2000 + year
+    return year
+
+
+def _parse_search_date_range(text, today):
+    if "มะรืน" in text:
+        target = today + timedelta(days=2)
+        return target, target, None
+    if "พรุ่งนี้" in text:
+        target = today + timedelta(days=1)
+        return target, target, None
+    if "วันนี้" in text:
+        return today, today, None
+
+    numeric = re.search(r"(?<!\d)(\d{1,2})\s*[/-]\s*(\d{1,2})(?:\s*[/-]\s*(\d{2,4}))?(?!\d)", text)
+    if numeric:
+        try:
+            target = datetime(
+                _normalize_search_year(numeric.group(3), today.year),
+                int(numeric.group(2)),
+                int(numeric.group(1)),
+            ).date()
+            return target, target, None
+        except ValueError:
+            return None, None, "วันที่ที่ระบุไม่ถูกต้อง"
+
+    for alias, month in sorted(THAI_MONTH_ALIASES.items(), key=lambda item: len(item[0]), reverse=True):
+        match = re.search(rf"(?<!\d)(\d{{1,2}})\s*{re.escape(alias)}(?:\s*(\d{{2,4}}))?", text)
+        if match:
+            try:
+                target = datetime(
+                    _normalize_search_year(match.group(2), today.year), month, int(match.group(1))
+                ).date()
+                return target, target, None
+            except ValueError:
+                return None, None, "วันที่ที่ระบุไม่ถูกต้อง"
+
+    if "สัปดาห์หน้า" in text or "อาทิตย์หน้า" in text:
+        next_monday = today + timedelta(days=7 - today.weekday())
+        return next_monday, next_monday + timedelta(days=6), None
+    if "สัปดาห์นี้" in text or "อาทิตย์นี้" in text:
+        return today, today + timedelta(days=6 - today.weekday()), None
+    if "เดือนหน้า" in text:
+        first_this_month = today.replace(day=1)
+        first_next_month = (first_this_month.replace(day=28) + timedelta(days=4)).replace(day=1)
+        first_after = (first_next_month.replace(day=28) + timedelta(days=4)).replace(day=1)
+        return first_next_month, first_after - timedelta(days=1), None
+    if "เดือนนี้" in text:
+        first_after = (today.replace(day=28) + timedelta(days=4)).replace(day=1)
+        return today, first_after - timedelta(days=1), None
+    if "7 วัน" in text or "เจ็ดวัน" in text:
+        return today, today + timedelta(days=6), None
+    return None, None, "กรุณาระบุวันที่ เช่น 25/07, พรุ่งนี้, สัปดาห์หน้า หรือเดือนหน้า"
+
+
+def _parse_clock_pair(text):
+    separator = r"(?:-|–|—|ถึง)"
+    clock_match = re.search(
+        rf"(?<!\d)(\d{{1,2}})(?:[:.](\d{{2}}))?\s*(?:น\.?|โมง)?\s*{separator}\s*"
+        rf"(\d{{1,2}})(?:[:.](\d{{2}}))?\s*(?:น\.?|โมง)?(?!\d)", text
+    )
+    if clock_match:
+        values = (
+            int(clock_match.group(1)), int(clock_match.group(2) or 0),
+            int(clock_match.group(3)), int(clock_match.group(4) or 0),
+        )
+    else:
+        compact_match = re.search(rf"(?<!\d)(\d{{3,4}})\s*{separator}\s*(\d{{3,4}})(?!\d)", text)
+        if not compact_match:
+            return None
+        raw_start, raw_end = compact_match.groups()
+        raw_start, raw_end = raw_start.zfill(4), raw_end.zfill(4)
+        values = (int(raw_start[:2]), int(raw_start[2:]), int(raw_end[:2]), int(raw_end[2:]))
+
+    start_hour, start_minute, end_hour, end_minute = values
+    if start_hour > 23 or end_hour > 23 or start_minute > 59 or end_minute > 59:
+        return "invalid"
+    return datetime.strptime(f"{start_hour:02d}:{start_minute:02d}", "%H:%M").time(), \
+        datetime.strptime(f"{end_hour:02d}:{end_minute:02d}", "%H:%M").time()
+
+
+def _find_requested_resource(text):
+    matches = []
+    for resource, aliases in RESOURCE_SEARCH_ALIASES.items():
+        if any(alias.lower() in text for alias in sorted(aliases, key=len, reverse=True)):
+            matches.append(resource)
+    # "MG (เนก)" มีคำว่า MG อยู่ด้วย ให้ใช้ชื่อที่เจาะจงกว่าเพียงรายการเดียว
+    if "MG (เนก)" in matches and "MG" in matches:
+        matches.remove("MG")
+    return matches
+
+
+def parse_availability_query(query, now=None):
+    """Convert common Thai availability questions into validated search criteria."""
+    text = _normalize_search_text(query)
+    if not text:
+        return None, "กรุณาพิมพ์คำถามที่ต้องการค้นหา"
+    today = (now or (datetime.utcnow() + timedelta(hours=7))).date()
+    date_start, date_end, date_error = _parse_search_date_range(text, today)
+    if date_error:
+        return None, date_error
+    if date_end < today:
+        return None, "ระบบผู้ช่วยค้นหาสำหรับการจองล่วงหน้า กรุณาระบุวันที่ตั้งแต่วันนี้เป็นต้นไป"
+
+    parsed_times = _parse_clock_pair(text)
+    used_default_time = False
+    if parsed_times == "invalid":
+        return None, "รูปแบบเวลาไม่ถูกต้อง กรุณาใช้ เช่น 09:00-12:00 หรือ 0900-1200"
+    if parsed_times:
+        start_clock, end_clock = parsed_times
+    elif "ช่วงเช้า" in text or "ตอนเช้า" in text:
+        start_clock, end_clock = datetime.strptime("08:00", "%H:%M").time(), datetime.strptime("12:00", "%H:%M").time()
+    elif "ช่วงบ่าย" in text or "ตอนบ่าย" in text:
+        start_clock, end_clock = datetime.strptime("13:00", "%H:%M").time(), datetime.strptime("17:00", "%H:%M").time()
+    else:
+        start_clock, end_clock = datetime.strptime("08:00", "%H:%M").time(), datetime.strptime("17:00", "%H:%M").time()
+        used_default_time = True
+    if datetime.combine(today, start_clock) >= datetime.combine(today, end_clock):
+        return None, "เวลาเริ่มต้องมาก่อนเวลาสิ้นสุด"
+
+    requested_resources = _find_requested_resource(text)
+    category = "ห้องประชุม" if ("ห้อง" in text or any(r in SYS_ROOMS for r in requested_resources)) else "รถยนต์"
+    requested_resources = [
+        resource for resource in requested_resources
+        if resource in (SYS_ROOMS if category == "ห้องประชุม" else SYS_CARS)
+    ]
+    return {
+        "query": str(query).strip(), "category": category,
+        "date_start": date_start, "date_end": date_end,
+        "start_clock": start_clock, "end_clock": end_clock,
+        "requested_resources": requested_resources,
+        "used_default_time": used_default_time,
+    }, None
+
+
+def _build_resource_units(resources, requested_resources=None):
+    units, seen = [], set()
+    requested_resources = requested_resources or []
+    for resource in resources:
+        members = tuple(dict.fromkeys(get_conflict_resources(resource)))
+        group_key = frozenset(members)
+        if group_key in seen:
+            continue
+        seen.add(group_key)
+        if requested_resources and not any(item in members for item in requested_resources):
+            continue
+        booking_resource = next((item for item in requested_resources if item in members), resource)
+        label = " / ".join(members)
+        if len(members) > 1:
+            label += " (รถคันเดียวกัน)"
+        units.append({"label": label, "members": members, "booking_resource": booking_resource})
+    return units
+
+
+def _merge_busy_intervals(rows, members, day, window_start=None, window_end=None):
+    day_start = datetime.combine(day, window_start or datetime.min.time())
+    day_end = datetime.combine(day, window_end or datetime.max.time())
+    intervals = []
+    for row in rows:
+        if row.get("resource") not in members:
+            continue
+        row_start = _to_calendar_datetime(row.get("start_time"))
+        row_end = _to_calendar_datetime(row.get("end_time"))
+        start, end = max(row_start, day_start), min(row_end, day_end)
+        if start < end:
+            intervals.append((start, end, row.get("status", "Approved")))
+    intervals.sort(key=lambda item: item[0])
+    return intervals
+
+
+def _format_free_slots(rows, members, day):
+    work_start = datetime.combine(day, datetime.strptime("08:00", "%H:%M").time())
+    work_end = datetime.combine(day, datetime.strptime("17:00", "%H:%M").time())
+    intervals = _merge_busy_intervals(rows, members, day, work_start.time(), work_end.time())
+    merged = []
+    for start, end, _ in intervals:
+        if merged and start <= merged[-1][1]:
+            merged[-1] = (merged[-1][0], max(merged[-1][1], end))
+        else:
+            merged.append((start, end))
+    cursor, slots = work_start, []
+    for start, end in merged:
+        if cursor < start:
+            slots.append(f"{cursor:%H:%M}-{start:%H:%M}")
+        cursor = max(cursor, end)
+    if cursor < work_end:
+        slots.append(f"{cursor:%H:%M}-{work_end:%H:%M}")
+    return slots
+
+
+def search_resource_availability(criteria):
+    """Read only bookings overlapping the requested range and calculate availability locally."""
+    resources = get_calendar_resources(criteria["category"])
+    units = _build_resource_units(resources, criteria["requested_resources"])
+    if not units:
+        return None, "ไม่พบรถหรือห้องที่ระบุในรายการทรัพยากรปัจจุบัน"
+
+    database_resources = sorted({member for unit in units for member in unit["members"]})
+    query_start = datetime.combine(criteria["date_start"], criteria["start_clock"])
+    query_end = datetime.combine(criteria["date_end"], criteria["end_clock"])
+    try:
+        response = supabase.table("bookings").select(
+            "resource,start_time,end_time,status"
+        ).in_("resource", database_resources).in_(
+            "status", ["Approved", "Pending"]
+        ).lt("start_time", query_end.isoformat()).gt(
+            "end_time", query_start.isoformat()
+        ).execute()
+        rows = response.data or []
+    except Exception as exc:
+        return None, f"ไม่สามารถตรวจสอบฐานข้อมูลได้: {exc}"
+
+    days = []
+    day = criteria["date_start"]
+    while day <= criteria["date_end"]:
+        desired_start = datetime.combine(day, criteria["start_clock"])
+        desired_end = datetime.combine(day, criteria["end_clock"])
+        free_units, busy_units = [], []
+        for unit in units:
+            conflicts = _merge_busy_intervals(
+                rows, unit["members"], day, criteria["start_clock"], criteria["end_clock"]
+            )
+            if conflicts:
+                busy_units.append({
+                    **unit,
+                    "conflicts": [
+                        {
+                            "time": f"{start:%H:%M}-{end:%H:%M}",
+                            "status": "อนุมัติแล้ว" if status == "Approved" else "รออนุมัติ",
+                        }
+                        for start, end, status in conflicts
+                    ],
+                    "free_slots": _format_free_slots(rows, unit["members"], day),
+                })
+            else:
+                free_units.append(unit)
+        days.append({
+            "date": day, "desired_start": desired_start, "desired_end": desired_end,
+            "free": free_units, "busy": busy_units,
+        })
+        day += timedelta(days=1)
+    return {"criteria": criteria, "days": days}, None
+
+
+def _set_smart_search_example(example):
+    st.session_state["smart_search_query"] = example
+
+
+def _apply_availability_to_booking(option):
+    st.session_state["booking_category"] = option["category"]
+    st.session_state["booking_resource"] = option["resource"]
+    st.session_state["booking_start_date"] = option["date"]
+    st.session_state["booking_end_date"] = option["date"]
+    st.session_state["booking_start_time"] = option["start"]
+    st.session_state["booking_end_time"] = option["end"]
+    st.session_state["top_nav"] = "📝 จองใหม่"
+
+
+def render_smart_availability_assistant():
+    """Free deterministic assistant: it never sends booking data to an external AI."""
+    st.markdown("---")
+    with st.container(border=True):
+        st.subheader("🔎 ผู้ช่วยค้นหารถและห้องว่าง")
+        st.caption("ค้นหาจากฐานข้อมูลจริง รวมทั้งรายการที่อนุมัติแล้วและรายการรออนุมัติ โดยไม่ส่งข้อมูลไปยัง AI ภายนอก")
+        examples = [
+            "รถคันไหนว่างพรุ่งนี้ 09:00-12:00",
+            "MG ว่างวันไหนสัปดาห์หน้า ช่วงบ่าย",
+            "ห้องประชุมว่างวันที่ 25/07 เวลา 13:00-16:00",
+        ]
+        example_columns = st.columns(3)
+        for index, (column, example) in enumerate(zip(example_columns, examples)):
+            column.button(
+                example, key=f"smart_example_{index}", use_container_width=True,
+                on_click=_set_smart_search_example, args=(example,),
+            )
+        with st.form("smart_availability_form"):
+            query = st.text_input(
+                "ถามผู้ช่วย", key="smart_search_query",
+                placeholder="เช่น รถคันไหนว่างวันที่ 25/07 เวลา 09:00-12:00",
+            )
+            submitted = st.form_submit_button("ค้นหาจากตารางจอง", type="primary", use_container_width=True)
+        if submitted:
+            criteria, parse_error = parse_availability_query(query)
+            if parse_error:
+                st.session_state["smart_search_result"] = None
+                st.session_state["smart_search_error"] = parse_error
+            else:
+                with st.spinner("กำลังตรวจสอบคิวจริง..."):
+                    result, search_error = search_resource_availability(criteria)
+                st.session_state["smart_search_result"] = result
+                st.session_state["smart_search_error"] = search_error
+
+        error = st.session_state.get("smart_search_error")
+        result = st.session_state.get("smart_search_result")
+        if error:
+            st.warning(error)
+        if not result:
+            return
+
+        criteria = result["criteria"]
+        st.markdown(
+            f"**ผลค้นหา: {criteria['category']} · "
+            f"{criteria['start_clock'].strftime('%H:%M')}-{criteria['end_clock'].strftime('%H:%M')}**"
+        )
+        if criteria["used_default_time"]:
+            st.info("ไม่ได้ระบุเวลา ระบบจึงตรวจช่วงเวลาทำการ 08:00-17:00")
+
+        bookable_options = []
+        if len(result["days"]) == 1:
+            day_result = result["days"][0]
+            st.markdown(f"#### {day_result['date'].strftime('%d/%m/%Y')}")
+            if day_result["free"]:
+                st.success("✅ ว่างตามช่วงเวลาที่ค้นหา: " + ", ".join(unit["label"] for unit in day_result["free"]))
+            else:
+                st.error("❌ ไม่มีรายการที่ว่างครบตามช่วงเวลาที่ค้นหา")
+            for unit in day_result["busy"]:
+                conflicts = ", ".join(f"{item['time']} ({item['status']})" for item in unit["conflicts"])
+                alternatives = ", ".join(unit["free_slots"]) or "ไม่มีช่วงว่างระหว่าง 08:00-17:00"
+                st.write(f"🔴 **{unit['label']}** ติดคิว {conflicts}")
+                st.caption(f"ช่วงอื่นที่ว่าง: {alternatives}")
+        else:
+            summary_rows = []
+            for day_result in result["days"]:
+                summary_rows.append({
+                    "วันที่": day_result["date"].strftime("%d/%m/%Y"),
+                    "ว่าง": ", ".join(unit["label"] for unit in day_result["free"]) or "-",
+                    "ติดคิว": ", ".join(unit["label"] for unit in day_result["busy"]) or "-",
+                })
+            st.dataframe(pd.DataFrame(summary_rows), hide_index=True, use_container_width=True)
+
+        for day_result in result["days"]:
+            for unit in day_result["free"]:
+                bookable_options.append({
+                    "label": (
+                        f"{day_result['date'].strftime('%d/%m/%Y')} · {unit['label']} · "
+                        f"{criteria['start_clock'].strftime('%H:%M')}-{criteria['end_clock'].strftime('%H:%M')}"
+                    ),
+                    "category": criteria["category"], "resource": unit["booking_resource"],
+                    "date": day_result["date"],
+                    "start": criteria["start_clock"].strftime("%H%M"),
+                    "end": criteria["end_clock"].strftime("%H%M"),
+                })
+        if bookable_options:
+            option_labels = [option["label"] for option in bookable_options]
+            selected_label = st.selectbox("เลือกรายการเพื่อนำไปหน้าจอง", option_labels, key="smart_booking_choice")
+            selected_option = bookable_options[option_labels.index(selected_label)]
+            st.button(
+                "📝 ไปหน้าจองพร้อมกรอกวัน เวลา และรายการให้",
+                type="primary", use_container_width=True,
+                on_click=_apply_availability_to_booking, args=(selected_option,),
+            )
 
 def load_month_usage(resources, month_start, next_month):
     """Group approved bookings by date and resource for the month calendar."""
@@ -665,6 +1060,7 @@ if choice in ["🏠 หน้าแรก", "📝 จองใหม่"]:
     
     if is_home_page:
         st.markdown(css_style + html_content, unsafe_allow_html=True)
+        render_smart_availability_assistant()
         render_month_calendar()
         d1, d2, d3 = st.columns(3)
         d1.metric("รายการจองวันนี้", f"{today_approved_count} รายการ")
@@ -694,20 +1090,46 @@ if choice in ["🏠 หน้าแรก", "📝 จองใหม่"]:
 
     col1, col2 = st.columns(2)
     with col1:
-        cat = st.radio("ประเภททรัพยากร", ["รถยนต์", "ห้องประชุม"], horizontal=True)
+        if st.session_state.get("booking_category") not in ["รถยนต์", "ห้องประชุม"]:
+            st.session_state["booking_category"] = "รถยนต์"
+        cat = st.radio(
+            "ประเภททรัพยากร", ["รถยนต์", "ห้องประชุม"],
+            horizontal=True, key="booking_category",
+        )
         res_list = SYS_CARS if cat == "รถยนต์" else SYS_ROOMS
-        res = st.selectbox("เลือกรายการ", res_list)
+        if st.session_state.get("booking_resource") not in res_list:
+            st.session_state["booking_resource"] = res_list[0]
+        res = st.selectbox("เลือกรายการ", res_list, key="booking_resource")
         dest = st.text_input("สถานที่ปลายทาง / Google Map") if cat == "รถยนต์" else "Office"
         name = st.text_input("ชื่อผู้จอง")
         phone = st.text_input("เบอร์โทรศัพท์")
         dept = st.selectbox("แผนก", SYS_DEPTS)
 
     with col2:
-        d_start = st.date_input("วันที่เริ่ม", datetime.now().date(), min_value=datetime.now().date())
-        t_s_raw = st.text_input("เวลาเริ่ม (เช่น 0800)", value="", placeholder="กรอกเวลา เช่น 0800", max_chars=4)
+        today = datetime.now().date()
+        if "booking_start_date" not in st.session_state or st.session_state["booking_start_date"] < today:
+            st.session_state["booking_start_date"] = today
+        d_start = st.date_input(
+            "วันที่เริ่ม", min_value=today, key="booking_start_date"
+        )
+        if "booking_start_time" not in st.session_state:
+            st.session_state["booking_start_time"] = ""
+        t_s_raw = st.text_input(
+            "เวลาเริ่ม (เช่น 0800)", placeholder="กรอกเวลา เช่น 0800",
+            max_chars=4, key="booking_start_time",
+        )
         st.markdown("---")
-        d_end = st.date_input("วันที่สิ้นสุด", d_start, min_value=d_start)
-        t_e_raw = st.text_input("เวลาสิ้นสุด (เช่น 1700)", value="", placeholder="กรอกเวลา เช่น 1700", max_chars=4)
+        if "booking_end_date" not in st.session_state or st.session_state["booking_end_date"] < d_start:
+            st.session_state["booking_end_date"] = d_start
+        d_end = st.date_input(
+            "วันที่สิ้นสุด", min_value=d_start, key="booking_end_date"
+        )
+        if "booking_end_time" not in st.session_state:
+            st.session_state["booking_end_time"] = ""
+        t_e_raw = st.text_input(
+            "เวลาสิ้นสุด (เช่น 1700)", placeholder="กรอกเวลา เช่น 1700",
+            max_chars=4, key="booking_end_time",
+        )
         reason = st.text_area("วัตถุประสงค์การใช้งาน")
         
         try:
