@@ -116,7 +116,7 @@ st.markdown("""
         width: 100%;
     }
 
-    div[role="radiogroup"][aria-label="เมนูหลัก"] > label[data-baseweb="radio"] {
+    div[role="radiogroup"][aria-label="เมนูหลัก"] > label {
         position: relative;
         display: flex !important;
         align-items: center;
@@ -132,13 +132,24 @@ st.markdown("""
         transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease, background 0.18s ease;
     }
 
+    /* Streamlit รุ่นที่ใช้ BaseWeb (localhost) */
     div[role="radiogroup"][aria-label="เมนูหลัก"] > label[data-baseweb="radio"] > div:first-child {
         position: absolute;
         opacity: 0;
         pointer-events: none;
     }
 
-    div[role="radiogroup"][aria-label="เมนูหลัก"] > label[data-baseweb="radio"] p {
+    /* Streamlit Cloud รุ่นที่ใช้ React Aria */
+    div[role="radiogroup"][aria-label="เมนูหลัก"] > label[data-testid="stRadioOption"] > div:last-child > div:first-child > div:first-child {
+        display: none !important;
+    }
+
+    div[role="radiogroup"][aria-label="เมนูหลัก"] > label > div:last-child,
+    div[role="radiogroup"][aria-label="เมนูหลัก"] > label [data-testid="stMarkdownContainer"] {
+        width: 100%;
+    }
+
+    div[role="radiogroup"][aria-label="เมนูหลัก"] > label p {
         margin: 0;
         color: var(--brand-ink) !important;
         font-size: clamp(0.82rem, 1vw, 0.98rem);
@@ -148,25 +159,27 @@ st.markdown("""
         white-space: nowrap;
     }
 
-    div[role="radiogroup"][aria-label="เมนูหลัก"] > label[data-baseweb="radio"]:hover {
+    div[role="radiogroup"][aria-label="เมนูหลัก"] > label:hover {
         transform: translateY(-2px);
         border-color: rgba(22, 139, 210, 0.42);
         box-shadow: 0 10px 22px rgba(22, 139, 210, 0.14);
     }
 
-    div[role="radiogroup"][aria-label="เมนูหลัก"] > label[data-baseweb="radio"]:has(input:checked) {
+    div[role="radiogroup"][aria-label="เมนูหลัก"] > label:has(input:checked),
+    div[role="radiogroup"][aria-label="เมนูหลัก"] > label[data-selected="true"] {
         border-color: transparent;
         background: linear-gradient(135deg, var(--brand-blue), #39B8C9 55%, var(--brand-green));
         box-shadow: 0 10px 24px rgba(22, 139, 210, 0.26);
         transform: translateY(-1px);
     }
 
-    div[role="radiogroup"][aria-label="เมนูหลัก"] > label[data-baseweb="radio"]:has(input:checked) p {
+    div[role="radiogroup"][aria-label="เมนูหลัก"] > label:has(input:checked) p,
+    div[role="radiogroup"][aria-label="เมนูหลัก"] > label[data-selected="true"] p {
         color: #FFFFFF !important;
         text-shadow: 0 1px 3px rgba(0, 0, 0, 0.16);
     }
 
-    div[role="radiogroup"][aria-label="เมนูหลัก"] > label[data-baseweb="radio"]:has(input:focus-visible) {
+    div[role="radiogroup"][aria-label="เมนูหลัก"] > label:has(input:focus-visible) {
         outline: 3px solid rgba(22, 139, 210, 0.30);
         outline-offset: 2px;
     }
@@ -196,12 +209,12 @@ st.markdown("""
             gap: 0.5rem;
         }
 
-        div[role="radiogroup"][aria-label="เมนูหลัก"] > label[data-baseweb="radio"] {
+        div[role="radiogroup"][aria-label="เมนูหลัก"] > label {
             min-height: 52px;
             padding: 0.58rem 0.35rem !important;
         }
 
-        div[role="radiogroup"][aria-label="เมนูหลัก"] > label[data-baseweb="radio"] p {
+        div[role="radiogroup"][aria-label="เมนูหลัก"] > label p {
             font-size: 0.82rem;
         }
     }
