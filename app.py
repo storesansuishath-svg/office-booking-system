@@ -20,7 +20,7 @@ supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 # ==========================================
 # 2. การตั้งค่าระบบ (แก้ไขรายชื่อได้ที่นี่โดยตรง)
 # ==========================================
-CURRENT_BOT_ID = "@851jrsed"  
+CURRENT_BOT_ID = "@119xqhqx"  
 LINE_ADD_FRIEND_URL = f"https://line.me/R/ti/p/{CURRENT_BOT_ID}"
 GROUP_ID = "Cad74a32468ca40051bd7071a6064660d" # ไอดีกลุ่มแจ้งเตือน
 
