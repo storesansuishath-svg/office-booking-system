@@ -1,9 +1,7 @@
 import streamlit as st
-import streamlit.components.v1 as components
 import pandas as pd
 from supabase import create_client
 from datetime import datetime, timedelta
-from pathlib import Path
 import requests
 import time
 import io
@@ -22,12 +20,7 @@ supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 # ==========================================
 # 2. การตั้งค่าระบบ (แก้ไขรายชื่อได้ที่นี่โดยตรง)
 # ==========================================
-APP_DIR = Path(__file__).resolve().parent
-COMPANY_LOGO_PATH = APP_DIR / "assets" / "sansuisha-logo.png"
-APP_LOGO_PATH = APP_DIR / "assets" / "book-smarter-plus-logo.png"
-APP_ICON_PATH = APP_DIR / "assets" / "book-smarter-plus-favicon.png"
-
-CURRENT_BOT_ID = "@119xqhqx"
+CURRENT_BOT_ID = "@119xqhqx"  
 LINE_ADD_FRIEND_URL = f"https://line.me/R/ti/p/{CURRENT_BOT_ID}"
 GROUP_ID = "Cad74a32468ca40051bd7071a6064660d" # ไอดีกลุ่มแจ้งเตือน
 
@@ -53,89 +46,7 @@ SYS_DEPTS = [
 # ==========================================
 # 3. ตั้งค่าหน้าเพจและ CSS หลัก
 # ==========================================
-st.set_page_config(
-    page_title="Book Smarter Plus+ | ระบบจองรถและห้องประชุม",
-    page_icon=str(APP_ICON_PATH),
-    layout="wide",
-)
-
-# Streamlit ตั้ง favicon ได้โดยตรง แต่ไอคอนติดตั้งบนหน้าจอหลักของ Android/iOS
-# ต้องมี Web App Manifest และ apple-touch-icon ใน <head> เพิ่มเติม
-components.html(
-    """
-    <script>
-    (() => {
-        const doc = window.parent.document;
-        const version = "20260723";
-        const staticRoot = `${doc.location.origin}/app/static/`;
-
-        const upsertLink = (id, rel, href, sizes = "") => {
-            let link = doc.head.querySelector(`#${id}`);
-            if (!link) {
-                link = doc.createElement("link");
-                link.id = id;
-                doc.head.appendChild(link);
-            }
-            link.rel = rel;
-            link.href = `${staticRoot}${href}?v=${version}`;
-            if (sizes) {
-                link.sizes = sizes;
-            }
-        };
-
-        const upsertMeta = (name, content) => {
-            let meta = doc.head.querySelector(`meta[name="${name}"]`);
-            if (!meta) {
-                meta = doc.createElement("meta");
-                meta.name = name;
-                doc.head.appendChild(meta);
-            }
-            meta.content = content;
-        };
-
-        upsertLink(
-            "book-smarter-manifest",
-            "manifest",
-            "manifest.json"
-        );
-        upsertLink(
-            "book-smarter-apple-touch-icon-152",
-            "apple-touch-icon",
-            "apple-touch-icon-152.png",
-            "152x152"
-        );
-        upsertLink(
-            "book-smarter-apple-touch-icon-167",
-            "apple-touch-icon",
-            "apple-touch-icon-167.png",
-            "167x167"
-        );
-        upsertLink(
-            "book-smarter-apple-touch-icon-180",
-            "apple-touch-icon",
-            "apple-touch-icon.png",
-            "180x180"
-        );
-        upsertLink(
-            "book-smarter-browser-icon",
-            "icon",
-            "favicon-64.png",
-            "64x64"
-        );
-
-        upsertMeta("theme-color", "#168BD2");
-        upsertMeta("msapplication-TileColor", "#168BD2");
-        upsertMeta("application-name", "Book Smarter Plus+");
-        upsertMeta("mobile-web-app-capable", "yes");
-        upsertMeta("apple-mobile-web-app-capable", "yes");
-        upsertMeta("apple-mobile-web-app-title", "Book Smarter Plus+");
-        upsertMeta("apple-mobile-web-app-status-bar-style", "default");
-    })();
-    </script>
-    """,
-    height=0,
-    width=0,
-)
+st.set_page_config(page_title="ระบบจองรถและห้องประชุม - Sansuisha", layout="wide")
 
 st.markdown("""
     <style>
@@ -168,18 +79,6 @@ st.markdown("""
     section[data-testid="stSidebar"] {
         background: linear-gradient(180deg, rgba(246, 252, 255, 0.98), rgba(242, 250, 244, 0.98));
         border-right: 1px solid rgba(22, 139, 210, 0.12);
-    }
-
-    .sidebar-brand-divider {
-        height: 1px;
-        margin: 0.15rem 0.75rem 0.65rem;
-        background: linear-gradient(
-            90deg,
-            transparent,
-            rgba(22, 139, 210, 0.28),
-            rgba(98, 201, 107, 0.28),
-            transparent
-        );
     }
 
     @keyframes blinker { 50% { opacity: 0; } }
@@ -954,9 +853,7 @@ try:
 except:
     pending_count = 0
 
-st.sidebar.image(str(COMPANY_LOGO_PATH), use_container_width=True)
-st.sidebar.markdown('<div class="sidebar-brand-divider"></div>', unsafe_allow_html=True)
-st.sidebar.image(str(APP_LOGO_PATH), use_container_width=True)
+st.sidebar.image("https://lh3.googleusercontent.com/d/1zCjSjSbCO-mbsaGoDI6g0G-bfmyVfqFV", use_container_width=True)
 st.sidebar.link_button(label="เพิ่มเพื่อน LINE (ดูคิว/สถานะ)", url=LINE_ADD_FRIEND_URL, use_container_width=True, type="primary")
 st.sidebar.markdown(f"<p style='text-align: center; color: gray; font-size: 12px;'>Line ID: {CURRENT_BOT_ID}</p>", unsafe_allow_html=True)
 
