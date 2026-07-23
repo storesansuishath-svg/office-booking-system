@@ -1,10 +1,7 @@
 import streamlit as st
-import streamlit.components.v1 as components
 import pandas as pd
 from supabase import create_client
-from supabase.client import ClientOptions
 from datetime import datetime, timedelta
-from pathlib import Path
 import requests
 import time
 import io
@@ -18,16 +15,12 @@ import re
 # ==========================================
 SUPABASE_URL = "https://qejqynbxdflwebzzwfzu.supabase.co" 
 SUPABASE_KEY = "sb_publishable_hvNQEPvuEAlXfVeCzpy7Ug_kzvihQqq"
+supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 # ==========================================
 # 2. การตั้งค่าระบบ (แก้ไขรายชื่อได้ที่นี่โดยตรง)
 # ==========================================
-APP_DIR = Path(__file__).resolve().parent
-COMPANY_LOGO_PATH = APP_DIR / "assets" / "sansuisha-logo.png"
-APP_LOGO_PATH = APP_DIR / "assets" / "book-smarter-plus-logo.png"
-APP_ICON_PATH = APP_DIR / "assets" / "book-smarter-plus-favicon.png"
-
-CURRENT_BOT_ID = "@119xqhqx"
+CURRENT_BOT_ID = "@119xqhqx"  
 LINE_ADD_FRIEND_URL = f"https://line.me/R/ti/p/{CURRENT_BOT_ID}"
 GROUP_ID = "Cad74a32468ca40051bd7071a6064660d" # ไอดีกลุ่มแจ้งเตือน
 
@@ -53,106 +46,7 @@ SYS_DEPTS = [
 # ==========================================
 # 3. ตั้งค่าหน้าเพจและ CSS หลัก
 # ==========================================
-st.set_page_config(
-    page_title="Book Smarter Plus+ | ระบบจองรถและห้องประชุม",
-    page_icon=str(APP_ICON_PATH),
-    layout="wide",
-)
-
-# ใช้ Client เดียวร่วมกันตลอดอายุของ Streamlit process เพื่อลดการเปิด
-# connection pool ใหม่ทุกครั้งที่ผู้ใช้เปลี่ยนเมนูหรือกดปุ่มจนเกิด rerun
-@st.cache_resource(show_spinner=False)
-def get_supabase_client():
-    return create_client(
-        SUPABASE_URL,
-        SUPABASE_KEY,
-        options=ClientOptions(
-            postgrest_client_timeout=10,
-            storage_client_timeout=10,
-            function_client_timeout=10,
-            schema="public",
-        ),
-    )
-
-supabase = get_supabase_client()
-
-# Streamlit ตั้ง favicon ได้โดยตรง แต่ไอคอนติดตั้งบนหน้าจอหลักของ Android/iOS
-# ต้องมี Web App Manifest และ apple-touch-icon ใน <head> เพิ่มเติม
-components.html(
-    """
-    <script>
-    (() => {
-        const doc = window.parent.document;
-        const version = "20260723";
-        const staticRoot = `${doc.location.origin}/app/static/`;
-
-        const upsertLink = (id, rel, href, sizes = "") => {
-            let link = doc.head.querySelector(`#${id}`);
-            if (!link) {
-                link = doc.createElement("link");
-                link.id = id;
-                doc.head.appendChild(link);
-            }
-            link.rel = rel;
-            link.href = `${staticRoot}${href}?v=${version}`;
-            if (sizes) {
-                link.sizes = sizes;
-            }
-        };
-
-        const upsertMeta = (name, content) => {
-            let meta = doc.head.querySelector(`meta[name="${name}"]`);
-            if (!meta) {
-                meta = doc.createElement("meta");
-                meta.name = name;
-                doc.head.appendChild(meta);
-            }
-            meta.content = content;
-        };
-
-        upsertLink(
-            "book-smarter-manifest",
-            "manifest",
-            "manifest.json"
-        );
-        upsertLink(
-            "book-smarter-apple-touch-icon-152",
-            "apple-touch-icon",
-            "apple-touch-icon-152.png",
-            "152x152"
-        );
-        upsertLink(
-            "book-smarter-apple-touch-icon-167",
-            "apple-touch-icon",
-            "apple-touch-icon-167.png",
-            "167x167"
-        );
-        upsertLink(
-            "book-smarter-apple-touch-icon-180",
-            "apple-touch-icon",
-            "apple-touch-icon.png",
-            "180x180"
-        );
-        upsertLink(
-            "book-smarter-browser-icon",
-            "icon",
-            "favicon-64.png",
-            "64x64"
-        );
-
-        upsertMeta("theme-color", "#168BD2");
-        upsertMeta("msapplication-TileColor", "#168BD2");
-        upsertMeta("application-name", "Book Smarter Plus+");
-        upsertMeta("mobile-web-app-capable", "yes");
-        upsertMeta("apple-mobile-web-app-capable", "yes");
-        upsertMeta("apple-mobile-web-app-title", "Book Smarter Plus+");
-        upsertMeta("apple-mobile-web-app-status-bar-style", "default");
-    })();
-    </script>
-    """,
-    height=0,
-    width=0,
-)
+st.set_page_config(page_title="ระบบจองรถและห้องประชุม - Sansuisha", layout="wide")
 
 st.markdown("""
     <style>
@@ -185,18 +79,6 @@ st.markdown("""
     section[data-testid="stSidebar"] {
         background: linear-gradient(180deg, rgba(246, 252, 255, 0.98), rgba(242, 250, 244, 0.98));
         border-right: 1px solid rgba(22, 139, 210, 0.12);
-    }
-
-    .sidebar-brand-divider {
-        height: 1px;
-        margin: 0.15rem 0.75rem 0.65rem;
-        background: linear-gradient(
-            90deg,
-            transparent,
-            rgba(22, 139, 210, 0.28),
-            rgba(98, 201, 107, 0.28),
-            transparent
-        );
     }
 
     @keyframes blinker { 50% { opacity: 0; } }
@@ -407,15 +289,13 @@ def auto_delete_old_bookings():
     """Delete completed/stale booking rows older than 45 days, once per day."""
     threshold = (datetime.utcnow() + timedelta(hours=7) - timedelta(days=45)).isoformat()
     try:
-        # ไม่รับข้อมูลทุกคอลัมน์ของแถวที่ลบกลับมายัง Streamlit Cloud
-        # ช่วยลดทั้งหน่วยความจำและปริมาณข้อมูล โดยยังลบ 45 วันเหมือนเดิม
-        supabase.table("bookings").delete(returning="minimal").lt("end_time", threshold).execute()
-        return {"ok": True, "threshold": threshold}
+        result = supabase.table("bookings").delete().lt("end_time", threshold).execute()
+        return {"ok": True, "deleted": len(result.data or []), "threshold": threshold}
     except Exception as exc:
         # Keep the web available, but make the failure visible in Render/
         # Streamlit logs instead of silently disabling data retention.
         print(f"[retention] 45-day cleanup failed: {exc}")
-        return {"ok": False, "threshold": threshold}
+        return {"ok": False, "deleted": 0, "threshold": threshold}
 
 def _to_calendar_datetime(value):
     """Use the exact wall-clock value stored by the existing application.
@@ -762,7 +642,7 @@ def render_smart_availability_assistant():
         example_columns = st.columns(3)
         for index, (column, example) in enumerate(zip(example_columns, examples)):
             column.button(
-                example, key=f"smart_example_{index}", width="stretch",
+                example, key=f"smart_example_{index}", use_container_width=True,
                 on_click=_set_smart_search_example, args=(example,),
             )
         with st.form("smart_availability_form"):
@@ -770,7 +650,7 @@ def render_smart_availability_assistant():
                 "ถามผู้ช่วย", key="smart_search_query",
                 placeholder="เช่น รถคันไหนว่างวันที่ 25/07 เวลา 09:00-12:00",
             )
-            submitted = st.form_submit_button("ค้นหาจากตารางจอง", type="primary", width="stretch")
+            submitted = st.form_submit_button("ค้นหาจากตารางจอง", type="primary", use_container_width=True)
         if submitted:
             criteria, parse_error = parse_availability_query(query)
             if parse_error:
@@ -818,7 +698,7 @@ def render_smart_availability_assistant():
                     "ว่าง": ", ".join(unit["label"] for unit in day_result["free"]) or "-",
                     "ติดคิว": ", ".join(unit["label"] for unit in day_result["busy"]) or "-",
                 })
-            st.dataframe(pd.DataFrame(summary_rows), hide_index=True, width="stretch")
+            st.dataframe(pd.DataFrame(summary_rows), hide_index=True, use_container_width=True)
 
         for day_result in result["days"]:
             for unit in day_result["free"]:
@@ -838,7 +718,7 @@ def render_smart_availability_assistant():
             selected_option = bookable_options[option_labels.index(selected_label)]
             st.button(
                 "📝 ไปหน้าจองพร้อมกรอกวัน เวลา และรายการให้",
-                type="primary", width="stretch",
+                type="primary", use_container_width=True,
                 on_click=_apply_availability_to_booking, args=(selected_option,),
             )
 
@@ -968,20 +848,13 @@ def check_admin_login():
 # running Streamlit instance instead of once per widget interaction/rerun.
 auto_delete_old_bookings()
 try:
-    pending_result = (
-        supabase.table("bookings")
-        .select("id", count="exact", head=True)
-        .eq("status", "Pending")
-        .execute()
-    )
-    pending_count = pending_result.count or 0
+    pending_items = supabase.table("bookings").select("id").eq("status", "Pending").execute().data
+    pending_count = len(pending_items)
 except:
     pending_count = 0
 
-st.sidebar.image(str(COMPANY_LOGO_PATH), width="stretch")
-st.sidebar.markdown('<div class="sidebar-brand-divider"></div>', unsafe_allow_html=True)
-st.sidebar.image(str(APP_LOGO_PATH), width="stretch")
-st.sidebar.link_button(label="เพิ่มเพื่อน LINE (ดูคิว/สถานะ)", url=LINE_ADD_FRIEND_URL, width="stretch", type="primary")
+st.sidebar.image("https://lh3.googleusercontent.com/d/1zCjSjSbCO-mbsaGoDI6g0G-bfmyVfqFV", use_container_width=True)
+st.sidebar.link_button(label="เพิ่มเพื่อน LINE (ดูคิว/สถานะ)", url=LINE_ADD_FRIEND_URL, use_container_width=True, type="primary")
 st.sidebar.markdown(f"<p style='text-align: center; color: gray; font-size: 12px;'>Line ID: {CURRENT_BOT_ID}</p>", unsafe_allow_html=True)
 
 if pending_count > 0:
@@ -991,7 +864,7 @@ st.sidebar.markdown("---")
 
 if st.session_state["admin_logged_in"]:
     st.sidebar.success(f"👤 เข้าสู่ระบบแล้ว:\n**{st.session_state['admin_user']}**")
-    if st.sidebar.button("🚪 ออกจากระบบ (Logout)", width="stretch"):
+    if st.sidebar.button("🚪 ออกจากระบบ (Logout)", use_container_width=True):
         st.session_state["admin_logged_in"] = False
         st.session_state["admin_user"] = ""
         st.rerun()
@@ -1180,7 +1053,10 @@ if choice in ["🏠 หน้าแรก", "📝 จองใหม่"]:
     </div>
     """
     # --- สถิติ ---
-    today_approved_count = len(today_bookings.data or [])
+    try:
+        today_approved_res = supabase.table("bookings").select("id").eq("status", "Approved").gte("start_time", t_today_start).lte("start_time", t_today_end).execute()
+        today_approved_count = len(today_approved_res.data) if today_approved_res.data else 0
+    except: today_approved_count = 0
     
     if is_home_page:
         st.markdown(css_style + html_content, unsafe_allow_html=True)
@@ -1262,7 +1138,7 @@ if choice in ["🏠 หน้าแรก", "📝 จองใหม่"]:
             te = datetime.combine(d_end, datetime.strptime(te_f, "%H:%M").time())
         except: ts, te = None, None
 
-    if st.button("ยืนยันการส่งคำขอจอง", width="stretch"):
+    if st.button("ยืนยันการส่งคำขอจอง", use_container_width=True):
         unrated_pending = get_unrated_bookings(name, dept) if name and dept else []
         if not name or not dept or ts is None:
             st.warning("⚠️ กรุณากรอกข้อมูลให้ครบถ้วน")
@@ -1329,7 +1205,7 @@ elif choice == "📅 ตารางงาน (Real-time)":
             
             df_disp = df_show[['ลำดับ/No.', 'resource', 'start_fmt', 'end_fmt', 'requester', 'purpose', 'destination']]
             df_disp.columns = ['ลำดับ / No.', 'รายการ / Resource', 'เวลาเริ่ม / Start Time', 'เวลาสิ้นสุด / End Time', 'ผู้จอง / Name', 'วัตถุประสงค์ / Purpose', 'ปลายทาง / Destination']
-            st.dataframe(df_disp, width="stretch")
+            st.dataframe(df_disp, use_container_width=True)
 
             st.markdown("---")
             with st.expander("🛠️ จัดการข้อมูล (แก้ไข/ลบ โดย Admin)"):
@@ -1362,7 +1238,7 @@ elif choice == "📅 ตารางงาน (Real-time)":
                         n_purp = st.text_area("วัตถุประสงค์ / Purpose", str(row.get('purpose', '-')))
                         
                         b1, b2 = st.columns(2)
-                        if b1.form_submit_button("💾 บันทึกการแก้ไข", width="stretch"):
+                        if b1.form_submit_button("💾 บันทึกการแก้ไข", use_container_width=True):
                             try:
                                 fs, fe = format_time_string(n_t_s), format_time_string(n_t_e)
                                 f_start = datetime.combine(n_d_s, datetime.strptime(fs, "%H:%M").time()).isoformat()
@@ -1386,7 +1262,7 @@ elif choice == "📅 ตารางงาน (Real-time)":
                                         st.success("อัปเดตเรียบร้อย!"); st.rerun()
                             except Exception as e: st.error(f"❌ ผิดพลาด: {e}")
                         
-                        if b2.form_submit_button("🗑️ ลบรายการนี้", width="stretch"):
+                        if b2.form_submit_button("🗑️ ลบรายการนี้", use_container_width=True):
                             try:
                                 supabase.table("bookings").delete().eq("id", row['id']).execute()
                                 st.rerun()
@@ -1466,7 +1342,7 @@ elif choice == "🔑 Admin (อนุมัติ)":
                         a_d = st.date_input("ยืนยันวันที่", curr_start.date(), key=f"d_{item['id']}")
                         a_t = st.text_input("ยืนยันเวลาเริ่ม (4 หลัก)", curr_start.strftime("%H%M"), key=f"t_{item['id']}")
                     
-                    if c2.button("อนุมัติ ✅", key=f"ap_{item['id']}", width="stretch"):
+                    if c2.button("อนุมัติ ✅", key=f"ap_{item['id']}", use_container_width=True):
                         try:
                             f_time = format_time_string(a_t)
                             final_start = datetime.combine(a_d, datetime.strptime(f_time, "%H:%M").time()).isoformat()
@@ -1486,7 +1362,7 @@ elif choice == "🔑 Admin (อนุมัติ)":
                                     st.rerun()
                         except Exception as e: st.error(f"❌ ผิดพลาด: {e}")
                     
-                    if c2.button("ลบ 🗑️", key=f"dl_{item['id']}", width="stretch"):
+                    if c2.button("ลบ 🗑️", key=f"dl_{item['id']}", use_container_width=True):
                         try:
                             supabase.table("bookings").delete().eq("id", item['id']).execute()
                             st.rerun()
@@ -1596,7 +1472,7 @@ elif choice == "📊 รายงานประจำเดือน":
                     else: st.info("ยังไม่มีข้อมูลการประเมินในเดือนที่เลือก")
             
             st.markdown("---")
-            st.dataframe(out_df, width="stretch")
+            st.dataframe(out_df, use_container_width=True)
             
             buf = io.BytesIO()
             with pd.ExcelWriter(buf, engine='xlsxwriter') as w: out_df.to_excel(w, index=False)
