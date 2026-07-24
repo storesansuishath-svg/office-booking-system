@@ -1,5 +1,7 @@
-streamlit
-pandas
-supabase
-requests
-xlsxwriter
+# เวอร์ชันที่ทดสอบผ่านบนเครื่อง Local
+# ตรึงรุ่นเพื่อให้ Streamlit Cloud ไม่อัปเกรดเองเมื่อ Deploy ใหม่
+streamlit==1.54.0
+supabase==2.31.0
+pandas==2.3.3
+requests==2.32.5
+xlsxwriter==3.2.9
