@@ -28,8 +28,16 @@ APP_LOGO_PATH = APP_DIR / "assets" / "book-smarter-plus-logo.png"
 APP_ICON_PATH = APP_DIR / "assets" / "book-smarter-plus-favicon.png"
 
 CURRENT_BOT_ID = "@119xqhqx"
+APP_VERSION = "1.0.1"
 LINE_ADD_FRIEND_URL = f"https://line.me/R/ti/p/{CURRENT_BOT_ID}"
 GROUP_ID = "Cad74a32468ca40051bd7071a6064660d" # ไอดีกลุ่มแจ้งเตือน
+
+# ตารางผู้บริหาร: ดึงจาก Google Sheet แบบอ่านอย่างเดียว ไม่เขียนข้อมูลกลับไปที่ HR
+MANAGEMENT_SHEET_ID = "1D3FILvpPSQNKKO40ZccsAn34Z-DBGcnUCETj4mMdzW4"
+MANAGEMENT_SHEET_URL = f"https://docs.google.com/spreadsheets/d/{MANAGEMENT_SHEET_ID}/edit?usp=sharing"
+MANAGEMENT_SHEET_CSV_URL = (
+    f"https://docs.google.com/spreadsheets/d/{MANAGEMENT_SHEET_ID}/gviz/tq?tqx=out:csv"
+)
 
 # 🚗 ตั้งค่ารายชื่อรถยนต์ (ใช้ในการจองและประเมิน)
 SYS_CARS = ["Civic (ตุ้ม)", "Civic (บอล)", "Camry (เนก)", "MG", "MG (เนก)"]
@@ -83,7 +91,7 @@ components.html(
     <script>
     (() => {
         const doc = window.parent.document;
-        const version = "20260723";
+        const version = "20260804-v1.0.1";
         const staticRoot = `${doc.location.origin}/app/static/`;
 
         const upsertLink = (id, rel, href, sizes = "") => {
@@ -910,6 +918,129 @@ def render_month_calendar():
     st.caption("ตัวเลข “ใช้งาน” คือจำนวนรถหรือห้องที่มีรายการอนุมัติในวันนั้น; เวลาที่แสดงคือช่วงเวลาที่ถูกจองแล้ว")
 
 # ==========================================
+# 4.1 ตารางผู้บริหาร (อ่านข้อมูลจาก Google Sheet เท่านั้น)
+# ==========================================
+def _parse_management_date(value):
+    """Parse Google Sheet dates and normalize Buddhist Era dates when present."""
+    raw_value = str(value or "").strip()
+    if not raw_value:
+        return None
+    numeric_match = re.fullmatch(r"(\d{1,2})[/-](\d{1,2})[/-](\d{4})", raw_value)
+    if numeric_match:
+        day, month, year = (int(part) for part in numeric_match.groups())
+        if year >= 2400:
+            year -= 543
+        try:
+            return datetime(year, month, day).date()
+        except ValueError:
+            return None
+    parsed_value = pd.to_datetime(raw_value, errors="coerce", dayfirst=True)
+    if pd.isna(parsed_value):
+        return None
+    parsed_date = parsed_value.date()
+    if parsed_date.year >= 2400:
+        parsed_date = parsed_date.replace(year=parsed_date.year - 543)
+    return parsed_date
+
+
+def _format_management_time(value):
+    """Keep the HR-entered time readable while removing an optional :00 suffix."""
+    raw_value = str(value or "").strip()
+    match = re.fullmatch(r"(\d{1,2}):(\d{2})(?::\d{2})?", raw_value)
+    if match:
+        return f"{int(match.group(1)):02d}:{match.group(2)}"
+    return raw_value
+
+
+@st.cache_data(ttl=300, show_spinner=False)
+def load_management_schedule():
+    """Load the public HR sheet as CSV. This function never performs a write."""
+    response = requests.get(
+        MANAGEMENT_SHEET_CSV_URL,
+        timeout=15,
+        headers={"User-Agent": "Book-Smarter-Plus/1.0.1"},
+    )
+    response.raise_for_status()
+    response.encoding = "utf-8-sig"
+    schedule_df = pd.read_csv(io.StringIO(response.text), dtype=str).fillna("")
+    schedule_df.columns = [str(column).strip() for column in schedule_df.columns]
+
+    required_columns = {"วันที่", "เวลาออกเดินทาง", "ตำแหน่งเริ่มต้น", "เวลาถึง", "จุดหมายสุดท้าย"}
+    missing_columns = required_columns.difference(schedule_df.columns)
+    if missing_columns:
+        raise ValueError("Google Sheet ไม่มีหัวคอลัมน์ที่จำเป็น: " + ", ".join(sorted(missing_columns)))
+
+    schedule_df["_schedule_date"] = schedule_df["วันที่"].map(_parse_management_date)
+    schedule_df = schedule_df[schedule_df["_schedule_date"].notna()].copy()
+    schedule_df["_departure_time"] = schedule_df["เวลาออกเดินทาง"].map(_format_management_time)
+    schedule_df["_arrival_time"] = schedule_df["เวลาถึง"].map(_format_management_time)
+    schedule_df["_time_sort"] = schedule_df["_departure_time"].replace("", "99:99")
+    return schedule_df
+
+
+def render_management_schedule():
+    """Read-only daily/monthly management schedule, separated from the booking database."""
+    st.markdown('<div class="main-title">ตารางผู้บริหาร</div>', unsafe_allow_html=True)
+    st.caption("ข้อมูลจากฝ่าย HR · สำหรับดูตารางเท่านั้น ระบบนี้ไม่สามารถแก้ไข Google Sheet ได้")
+
+    controls_left, controls_right, controls_link = st.columns([1.1, 1.1, 1.4])
+    with controls_left:
+        view_mode = st.radio(
+            "รูปแบบการดู", ["รายวัน", "รายเดือน"], horizontal=True, key="management_view_mode"
+        )
+    with controls_right:
+        selected_date = st.date_input(
+            "เลือกวันที่" if view_mode == "รายวัน" else "เลือกเดือน",
+            value=datetime.now().date(),
+            key="management_schedule_date",
+        )
+    with controls_link:
+        st.link_button("เปิด Google Sheet ต้นฉบับ (ดูอย่างเดียว)", MANAGEMENT_SHEET_URL, width="stretch")
+
+    try:
+        with st.spinner("กำลังโหลดตารางผู้บริหาร..."):
+            schedule_df = load_management_schedule()
+    except Exception as exc:
+        st.error("ไม่สามารถโหลดตารางผู้บริหารได้ในขณะนี้")
+        st.caption(f"รายละเอียดสำหรับผู้ดูแล: {exc}")
+        return
+
+    if view_mode == "รายวัน":
+        filtered_df = schedule_df[schedule_df["_schedule_date"] == selected_date].copy()
+        heading = f"ตารางวันที่ {selected_date.strftime('%d/%m/%Y')}"
+    else:
+        month_start = selected_date.replace(day=1)
+        next_month = (month_start.replace(day=28) + timedelta(days=4)).replace(day=1)
+        filtered_df = schedule_df[
+            (schedule_df["_schedule_date"] >= month_start)
+            & (schedule_df["_schedule_date"] < next_month)
+        ].copy()
+        heading = f"ตารางเดือน {month_start.strftime('%m/%Y')}"
+
+    st.subheader(heading)
+    if filtered_df.empty:
+        st.info("ไม่มีรายการในช่วงวันที่เลือก")
+        return
+
+    filtered_df = filtered_df.sort_values(["_schedule_date", "_time_sort"], kind="stable")
+    display_rows = pd.DataFrame({
+        "วันที่": filtered_df["_schedule_date"].map(lambda value: value.strftime("%d/%m/%Y")),
+        "วัน": filtered_df.get("วัน", ""),
+        "เวลาเดินทาง": filtered_df.apply(
+            lambda row: " - ".join(part for part in [row["_departure_time"], row["_arrival_time"]] if part) or "-",
+            axis=1,
+        ),
+        "ต้นทาง": filtered_df["ตำแหน่งเริ่มต้น"],
+        "ปลายทาง": filtered_df["จุดหมายสุดท้าย"],
+        "รายละเอียด": filtered_df.get("รายละเอียด", ""),
+        "หมายเหตุ": filtered_df.get("หมายเหตุ", ""),
+    })
+    st.metric("จำนวนรายการ", f"{len(display_rows)} รายการ")
+    st.dataframe(display_rows, hide_index=True, width="stretch", height=min(680, 120 + len(display_rows) * 38))
+    st.caption("แสดงเฉพาะข้อมูลการเดินทาง ไม่แสดง Event ID, Sync ล่าสุด หรือคอลัมน์ระบบภายในของ HR")
+
+
+# ==========================================
 # 5. ระบบ LOGIN & AUTHENTICATION (เชื่อม app_admins)
 # ==========================================
 if "admin_logged_in" not in st.session_state:
@@ -982,7 +1113,11 @@ st.sidebar.image(str(COMPANY_LOGO_PATH), width="stretch")
 st.sidebar.markdown('<div class="sidebar-brand-divider"></div>', unsafe_allow_html=True)
 st.sidebar.image(str(APP_LOGO_PATH), width="stretch")
 st.sidebar.link_button(label="เพิ่มเพื่อน LINE (ดูคิว/สถานะ)", url=LINE_ADD_FRIEND_URL, width="stretch", type="primary")
-st.sidebar.markdown(f"<p style='text-align: center; color: gray; font-size: 12px;'>Line ID: {CURRENT_BOT_ID}</p>", unsafe_allow_html=True)
+st.sidebar.markdown(
+    f"<p style='text-align: center; color: gray; font-size: 12px;'>"
+    f"Book Smarter Plus+ · v{APP_VERSION}<br>Line ID: {CURRENT_BOT_ID}</p>",
+    unsafe_allow_html=True,
+)
 
 if pending_count > 0:
     st.sidebar.markdown(f'<p class="blink">📢 มีรายการรออนุมัติ: {pending_count}</p>', unsafe_allow_html=True)
@@ -998,11 +1133,12 @@ if st.session_state["admin_logged_in"]:
     st.sidebar.markdown("---")
 
 # เมนูหลักด้านบน (คงค่า choice เดิม เพื่อไม่กระทบลอจิกแต่ละหน้า)
-menu = ["🏠 หน้าแรก", "📝 จองใหม่", "📅 ตารางงาน (Real-time)", "⭐ ประเมินการใช้งาน", "🔑 Admin (อนุมัติ)", "📊 รายงานประจำเดือน"]
+menu = ["🏠 หน้าแรก", "📝 จองใหม่", "📅 ตารางงาน (Real-time)", "👔 ตารางผู้บริหาร", "⭐ ประเมินการใช้งาน", "🔑 Admin (อนุมัติ)", "📊 รายงานประจำเดือน"]
 nav_labels = {
     "🏠 หน้าแรก": "🏠 หน้าแรก",
     "📝 จองใหม่": "📝 จองใหม่",
     "📅 ตารางงาน (Real-time)": "📅 ตารางงาน",
+    "👔 ตารางผู้บริหาร": "👔 ผู้บริหาร",
     "⭐ ประเมินการใช้งาน": "⭐ ประเมิน",
     "🔑 Admin (อนุมัติ)": "🔑 Admin",
     "📊 รายงานประจำเดือน": "📊 รายงาน",
@@ -1300,6 +1436,12 @@ if choice in ["🏠 หน้าแรก", "📝 จองใหม่"]:
 
 # ==========================================
 # 8. หน้าตารางงาน 
+# ==========================================
+elif choice == "👔 ตารางผู้บริหาร":
+    render_management_schedule()
+
+# ==========================================
+# 8. ตารางงาน REAL-TIME
 # ==========================================
 elif choice == "📅 ตารางงาน (Real-time)":
     st.subheader("📅 ตารางการใช้งานปัจจุบันและล่วงหน้า")
