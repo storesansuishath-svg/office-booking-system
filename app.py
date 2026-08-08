@@ -28,16 +28,9 @@ APP_LOGO_PATH = APP_DIR / "assets" / "book-smarter-plus-logo.png"
 APP_ICON_PATH = APP_DIR / "assets" / "book-smarter-plus-favicon.png"
 
 CURRENT_BOT_ID = "@119xqhqx"
-APP_VERSION = "1.0.1"
+APP_VERSION = "1.0.2"
 LINE_ADD_FRIEND_URL = f"https://line.me/R/ti/p/{CURRENT_BOT_ID}"
 GROUP_ID = "Cad74a32468ca40051bd7071a6064660d" # ไอดีกลุ่มแจ้งเตือน
-
-# ตารางผู้บริหาร: ดึงจาก Google Sheet แบบอ่านอย่างเดียว ไม่เขียนข้อมูลกลับไปที่ HR
-MANAGEMENT_SHEET_ID = "1D3FILvpPSQNKKO40ZccsAn34Z-DBGcnUCETj4mMdzW4"
-MANAGEMENT_SHEET_URL = f"https://docs.google.com/spreadsheets/d/{MANAGEMENT_SHEET_ID}/edit?usp=sharing"
-MANAGEMENT_SHEET_CSV_URL = (
-    f"https://docs.google.com/spreadsheets/d/{MANAGEMENT_SHEET_ID}/gviz/tq?tqx=out:csv"
-)
 
 # 🚗 ตั้งค่ารายชื่อรถยนต์ (ใช้ในการจองและประเมิน)
 SYS_CARS = ["Civic (ตุ้ม)", "Civic (บอล)", "Camry (เนก)", "MG", "MG (เนก)"]
@@ -379,8 +372,8 @@ def check_booking_conflict(resource, start_time_iso, end_time_iso, exclude_booki
         ex_s = pd.to_datetime(item['start_time']).replace(tzinfo=None)
         ex_e = pd.to_datetime(item['end_time']).replace(tzinfo=None)
         if new_s < ex_e and new_e > ex_s:
-            return True, item['requester'], item['status']
-    return False, None, None
+            return True, item['requester'], item['status'], bool(item.get('is_executive_booking', False))
+    return False, None, None, False
 
 def get_unrated_bookings(name, dept):
     # ยาแรง: ล็อกทั้งแผนก หากมีใครคนใดคนหนึ่งในแผนกนี้ค้างประเมิน จะไม่ให้คนในแผนกนี้จองรถใหม่เด็ดขาด
@@ -1041,6 +1034,145 @@ def render_management_schedule():
 
 
 # ==========================================
+# 4.1 ตารางผู้บริหาร: บันทึกเฉพาะรถยนต์ (แทน Google Sheet เดิม)
+# ==========================================
+def render_management_schedule():
+    """Admin-only executive car schedule; saved in the shared bookings table."""
+    st.markdown('<div class="main-title">ตารางผู้บริหาร</div>', unsafe_allow_html=True)
+    if not st.session_state.get("admin_logged_in"):
+        st.info("เฉพาะ Admin ที่เข้าสู่ระบบแล้วเท่านั้นที่ดูหรือบันทึกรายละเอียดตารางผู้บริหารได้")
+        return
+
+    recorder = st.session_state.get("admin_user", "Admin")
+    st.caption("บันทึกเฉพาะรถยนต์ · อนุมัติทันที · ไม่มีการแจ้งเตือน LINE · รายละเอียดหน้านี้เห็นได้เฉพาะ Admin")
+
+    with st.form("executive_booking_form", clear_on_submit=True):
+        left, right = st.columns(2)
+        with left:
+            resource = st.selectbox("รถยนต์", SYS_CARS, key="executive_resource")
+            st.text_input("ผู้บันทึก", value=recorder, disabled=True)
+            destination = st.text_input("สถานที่ปลายทาง / Google Map", key="executive_destination")
+            purpose = st.text_area("วัตถุประสงค์การใช้งาน", key="executive_purpose")
+        with right:
+            today = datetime.now().date()
+            start_date = st.date_input("วันที่เริ่ม", min_value=today, key="executive_start_date")
+            start_raw = st.text_input("เวลาเริ่ม (เช่น 0800)", max_chars=4, key="executive_start_time")
+            end_date = st.date_input("วันที่สิ้นสุด", min_value=start_date, key="executive_end_date")
+            end_raw = st.text_input("เวลาสิ้นสุด (เช่น 1700)", max_chars=4, key="executive_end_time")
+        submitted = st.form_submit_button("บันทึกตารางผู้บริหาร", type="primary", width="stretch")
+
+    if submitted:
+        try:
+            start_time = datetime.combine(start_date, datetime.strptime(format_time_string(start_raw), "%H:%M").time())
+            end_time = datetime.combine(end_date, datetime.strptime(format_time_string(end_raw), "%H:%M").time())
+        except ValueError:
+            st.error("กรุณากรอกเวลาให้ถูกต้อง เช่น 0800 และ 1700")
+        else:
+            if start_time < datetime.now():
+                st.error("ไม่สามารถบันทึกเวลาย้อนหลังได้")
+            elif start_time >= end_time:
+                st.error("เวลาเริ่มต้องมาก่อนเวลาสิ้นสุด")
+            else:
+                is_conflict, conflict_user, conflict_status, is_executive_conflict = check_booking_conflict(
+                    resource, start_time.isoformat(), end_time.isoformat()
+                )
+                if is_conflict:
+                    detail = "ใช้สำหรับผู้บริหารแล้ว" if is_executive_conflict else (
+                        "ถูกจองแล้ว" if conflict_status == "Approved" else "มีคนกำลังรออนุมัติ"
+                    )
+                    st.error(f"บันทึกไม่ได้: {resource} {detail} ในช่วงเวลานี้")
+                else:
+                    try:
+                        supabase.table("bookings").insert({
+                            "resource": resource,
+                            "requester": recorder,
+                            "phone": "-",
+                            "dept": "ผู้บริหาร",
+                            "start_time": start_time.isoformat(),
+                            "end_time": end_time.isoformat(),
+                            "purpose": purpose,
+                            "destination": destination,
+                            "status": "Approved",
+                            "is_rated": True,
+                            "is_executive_booking": True,
+                            "last_updated_by": recorder,
+                            "last_updated_at": datetime.now().isoformat(),
+                        }).execute()
+                        st.success("บันทึกตารางผู้บริหารเรียบร้อย รถถูกกันคิวแล้ว")
+                        st.rerun()
+                    except Exception as exc:
+                        st.error(f"บันทึกไม่สำเร็จ: {exc}")
+
+    try:
+        executive_result = (
+            supabase.table("bookings").select("*")
+            .eq("is_executive_booking", True).in_("resource", SYS_CARS)
+            .order("start_time").execute()
+        )
+        executive_df = pd.DataFrame(executive_result.data or [])
+    except Exception as exc:
+        st.error(f"ไม่สามารถโหลดตารางผู้บริหารได้: {exc}")
+        return
+
+    st.markdown("---")
+    st.subheader("รายงานตารางผู้บริหาร")
+    if executive_df.empty:
+        st.info("ยังไม่มีรายการบันทึก")
+        return
+
+    executive_df["เวลาเริ่ม"] = pd.to_datetime(executive_df["start_time"], errors="coerce").dt.strftime("%d/%m/%Y %H:%M")
+    executive_df["เวลาสิ้นสุด"] = pd.to_datetime(executive_df["end_time"], errors="coerce").dt.strftime("%d/%m/%Y %H:%M")
+    executive_df["แก้ไขล่าสุด"] = pd.to_datetime(executive_df.get("last_updated_at"), errors="coerce").dt.strftime("%d/%m/%Y %H:%M").fillna("-")
+    executive_df["บันทึก/แก้ไขล่าสุดโดย"] = executive_df.get("last_updated_by", executive_df["requester"]).fillna(executive_df["requester"])
+    display = executive_df[["resource", "เวลาเริ่ม", "เวลาสิ้นสุด", "requester", "destination", "purpose", "บันทึก/แก้ไขล่าสุดโดย", "แก้ไขล่าสุด"]].copy()
+    display.columns = ["รถยนต์", "เวลาเริ่ม", "เวลาสิ้นสุด", "ผู้บันทึก", "ปลายทาง", "วัตถุประสงค์", "บันทึก/แก้ไขล่าสุดโดย", "เวลาแก้ไขล่าสุด"]
+    st.dataframe(display, hide_index=True, width="stretch")
+
+    st.markdown("### แก้ไขรายการ")
+    selected_id = st.selectbox("เลือกรายการ", executive_df["id"].tolist(), format_func=lambda value: f"#{value}")
+    record = executive_df[executive_df["id"] == selected_id].iloc[0]
+    with st.form("edit_executive_booking_form"):
+        edit_left, edit_right = st.columns(2)
+        with edit_left:
+            car_index = SYS_CARS.index(record["resource"]) if record["resource"] in SYS_CARS else 0
+            edit_resource = st.selectbox("รถยนต์", SYS_CARS, index=car_index, key="edit_executive_resource")
+            edit_destination = st.text_input("สถานที่ปลายทาง / Google Map", str(record.get("destination", "")), key="edit_executive_destination")
+            edit_purpose = st.text_area("วัตถุประสงค์การใช้งาน", str(record.get("purpose", "")), key="edit_executive_purpose")
+        with edit_right:
+            old_start = pd.to_datetime(record["start_time"]).to_pydatetime()
+            old_end = pd.to_datetime(record["end_time"]).to_pydatetime()
+            edit_start_date = st.date_input("วันที่เริ่ม", old_start.date(), key="edit_executive_start_date")
+            edit_start_raw = st.text_input("เวลาเริ่ม (เช่น 0800)", old_start.strftime("%H%M"), max_chars=4, key="edit_executive_start_time")
+            edit_end_date = st.date_input("วันที่สิ้นสุด", old_end.date(), key="edit_executive_end_date")
+            edit_end_raw = st.text_input("เวลาสิ้นสุด (เช่น 1700)", old_end.strftime("%H%M"), max_chars=4, key="edit_executive_end_time")
+        save_edit = st.form_submit_button("บันทึกการแก้ไข", type="primary", width="stretch")
+
+    if save_edit:
+        try:
+            updated_start = datetime.combine(edit_start_date, datetime.strptime(format_time_string(edit_start_raw), "%H:%M").time())
+            updated_end = datetime.combine(edit_end_date, datetime.strptime(format_time_string(edit_end_raw), "%H:%M").time())
+            if updated_start >= updated_end:
+                raise ValueError("เวลาเริ่มต้องมาก่อนเวลาสิ้นสุด")
+            is_conflict, _, _, _ = check_booking_conflict(
+                edit_resource, updated_start.isoformat(), updated_end.isoformat(), exclude_booking_id=record["id"]
+            )
+            if is_conflict:
+                st.error("แก้ไขไม่ได้: รถคันนี้มีคิวชนในช่วงเวลาที่เลือก")
+            else:
+                supabase.table("bookings").update({
+                    "resource": edit_resource, "destination": edit_destination, "purpose": edit_purpose,
+                    "start_time": updated_start.isoformat(), "end_time": updated_end.isoformat(),
+                    "last_updated_by": recorder, "last_updated_at": datetime.now().isoformat(),
+                }).eq("id", record["id"]).execute()
+                st.success("แก้ไขรายการเรียบร้อย")
+                st.rerun()
+        except ValueError as exc:
+            st.error(str(exc))
+        except Exception as exc:
+            st.error(f"แก้ไขไม่สำเร็จ: {exc}")
+
+
+# ==========================================
 # 5. ระบบ LOGIN & AUTHENTICATION (เชื่อม app_admins)
 # ==========================================
 if "admin_logged_in" not in st.session_state:
@@ -1410,10 +1542,13 @@ if choice in ["🏠 หน้าแรก", "📝 จองใหม่"]:
         elif ts >= te:
             st.error("❌ เวลาเริ่มต้องมาก่อนเวลาสิ้นสุด")
         else:
-            is_conf, user_conf, status_conf = check_booking_conflict(res, ts.isoformat(), te.isoformat())
+            is_conf, user_conf, status_conf, is_executive_conflict = check_booking_conflict(res, ts.isoformat(), te.isoformat())
             if is_conf:
-                msg = "ถูกจองแล้ว" if status_conf == "Approved" else "มีคนกำลังรออนุมัติ"
-                st.error(f"❌ คิวชนกัน! {res} {msg} โดยคุณ {user_conf} ในเวลานี้")
+                if is_executive_conflict:
+                    st.error(f"❌ {res} ไม่ว่าง / ใช้สำหรับผู้บริหาร ในเวลานี้")
+                else:
+                    msg = "ถูกจองแล้ว" if status_conf == "Approved" else "มีคนกำลังรออนุมัติ"
+                    st.error(f"❌ คิวชนกัน! {res} {msg} โดยคุณ {user_conf} ในเวลานี้")
             else:
                 try:
                     data = {
@@ -1453,6 +1588,9 @@ elif choice == "📅 ตารางงาน (Real-time)":
     try:
         res = supabase.table("bookings").select("*").eq("status", "Approved").gte("start_time", t_today_start).execute()
         df = pd.DataFrame(res.data)
+        if not df.empty and not st.session_state.get("admin_logged_in", False) and "is_executive_booking" in df.columns:
+            # Executive details are visible only to an Admin on the web schedule.
+            df = df[~df["is_executive_booking"].fillna(False)]
         if not df.empty: df = df.sort_values(by="start_time")
     except: df = pd.DataFrame()
     
@@ -1513,7 +1651,7 @@ elif choice == "📅 ตารางงาน (Real-time)":
                                 if datetime.fromisoformat(f_start) >= datetime.fromisoformat(f_end):
                                     st.error("❌ เวลาเริ่มต้องมาก่อนเวลาสิ้นสุด")
                                 else:
-                                    is_conf, user_conf, status_conf = check_booking_conflict(
+                                    is_conf, user_conf, status_conf, _ = check_booking_conflict(
                                         n_res, f_start, f_end, exclude_booking_id=row['id']
                                     )
                                     if is_conf:
@@ -1616,7 +1754,7 @@ elif choice == "🔑 Admin (อนุมัติ)":
                             if datetime.fromisoformat(final_start) >= pd.to_datetime(item['end_time']).to_pydatetime().replace(tzinfo=None):
                                 st.error("❌ อนุมัติไม่ได้ เวลาเริ่มต้องมาก่อนเวลาสิ้นสุด")
                             else:
-                                is_conf, user_conf, status_conf = check_booking_conflict(
+                                is_conf, user_conf, status_conf, is_executive_conflict = check_booking_conflict(
                                     item['resource'], final_start, item['end_time'], exclude_booking_id=item['id']
                                 )
                                 if is_conf:
