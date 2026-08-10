@@ -1179,24 +1179,57 @@ def render_management_schedule():
     executive_df["เวลาสิ้นสุด"] = pd.to_datetime(executive_df["end_time"], errors="coerce").dt.strftime("%d/%m/%Y %H:%M")
     executive_df["แก้ไขล่าสุด"] = executive_df.get("last_updated_at").map(format_thai_audit_datetime)
     executive_df["บันทึก/แก้ไขล่าสุดโดย"] = executive_df.get("last_updated_by", executive_df["requester"]).fillna(executive_df["requester"])
-    display = executive_df[["resource", "เวลาเริ่ม", "เวลาสิ้นสุด", "requester", "destination", "purpose", "บันทึก/แก้ไขล่าสุดโดย", "แก้ไขล่าสุด"]].copy()
-    display.columns = ["รถยนต์", "เวลาเริ่ม", "เวลาสิ้นสุด", "ผู้บันทึก", "ปลายทาง", "วัตถุประสงค์", "บันทึก/แก้ไขล่าสุดโดย", "เวลาแก้ไขล่าสุด"]
+    display = executive_df[["id", "resource", "เวลาเริ่ม", "เวลาสิ้นสุด", "requester", "destination", "purpose", "บันทึก/แก้ไขล่าสุดโดย", "แก้ไขล่าสุด"]].copy()
+    display.columns = ["รหัสรายการ", "รถยนต์", "เวลาเริ่ม", "เวลาสิ้นสุด", "ผู้บันทึก", "ปลายทาง", "วัตถุประสงค์", "บันทึก/แก้ไขล่าสุดโดย", "เวลาแก้ไขล่าสุด"]
     st.dataframe(display, hide_index=True, width="stretch")
 
     st.markdown("### แก้ไขรายการ")
-    selected_id = st.selectbox("เลือกรายการ", executive_df["id"].tolist(), format_func=lambda value: f"#{value}")
+    executive_df["label_for_edit"] = executive_df.apply(
+        lambda row: (
+            f"#{row['id']} | {row['resource']} | {row['เวลาเริ่ม']}–{row['เวลาสิ้นสุด']} "
+            f"| {str(row.get('destination', '-'))[:70]} | {str(row.get('purpose', '-'))[:50]}"
+        ),
+        axis=1,
+    )
+    labels_by_id = dict(zip(executive_df["id"], executive_df["label_for_edit"]))
+    available_ids = executive_df["id"].tolist()
+    current_id = st.session_state.get("executive_edit_id")
+    if current_id not in available_ids:
+        current_id = available_ids[0]
+        st.session_state["executive_edit_id"] = current_id
+
+    # Streamlit's dataframe cannot contain action buttons, so provide one
+    # clearly labelled edit button per record directly below the report.
+    st.caption("เลือกรายการจากรายละเอียดด้านล่าง หรือกดปุ่ม ✏️ แก้ไข ของรายการนั้น")
+    for item in executive_df.to_dict("records"):
+        row_info, row_action = st.columns([8, 2])
+        row_info.markdown(f"**{item['label_for_edit']}**")
+        if row_action.button("✏️ แก้ไข", key=f"open_executive_edit_{item['id']}", width="stretch"):
+            st.session_state["executive_edit_id"] = item["id"]
+            st.session_state["executive_edit_selector"] = item["id"]
+            st.rerun()
+
+    selected_id = st.selectbox(
+        "รายการที่กำลังแก้ไข",
+        available_ids,
+        index=available_ids.index(current_id),
+        format_func=lambda value: labels_by_id[value],
+        key="executive_edit_selector",
+    )
+    st.session_state["executive_edit_id"] = selected_id
     record = executive_df[executive_df["id"] == selected_id].iloc[0]
+    st.info(f"กำลังแก้ไข: {labels_by_id[selected_id]}")
     with st.form("edit_executive_booking_form"):
         edit_left, edit_right = st.columns(2)
         with edit_left:
             car_index = SYS_CARS.index(record["resource"]) if record["resource"] in SYS_CARS else 0
-            edit_resource = st.selectbox("รถยนต์", SYS_CARS, index=car_index, key="edit_executive_resource")
-            edit_destination = st.text_input("สถานที่ปลายทาง / Google Map", str(record.get("destination", "")), key="edit_executive_destination")
-            edit_purpose = st.text_area("วัตถุประสงค์การใช้งาน", str(record.get("purpose", "")), key="edit_executive_purpose")
+            edit_key = f"edit_executive_{record['id']}"
+            edit_resource = st.selectbox("รถยนต์", SYS_CARS, index=car_index, key=f"{edit_key}_resource")
+            edit_destination = st.text_input("สถานที่ปลายทาง / Google Map", str(record.get("destination", "")), key=f"{edit_key}_destination")
+            edit_purpose = st.text_area("วัตถุประสงค์การใช้งาน", str(record.get("purpose", "")), key=f"{edit_key}_purpose")
         with edit_right:
             old_start = booking_wall_datetime(record["start_time"])
             old_end = booking_wall_datetime(record["end_time"])
-            edit_key = f"edit_executive_{record['id']}"
             edit_start_date = st.date_input("วันที่เริ่ม", old_start.date(), key=f"{edit_key}_start_date")
             edit_start_raw = st.text_input("เวลาเริ่ม (เช่น 0800)", old_start.strftime("%H%M"), max_chars=4, key=f"{edit_key}_start_time")
             edit_end_date = st.date_input("วันที่สิ้นสุด", old_end.date(), key=f"{edit_key}_end_date")
