@@ -1622,7 +1622,14 @@ if choice in ["🏠 หน้าแรก", "📝 จองใหม่"]:
         except: ts, te = None, None
 
     if st.button("ยืนยันการส่งคำขอจอง", width="stretch"):
-        unrated_pending = get_unrated_bookings(name, dept) if name and dept else []
+        # Department evaluation locks apply only to a new vehicle booking.
+        # Meeting-room bookings must remain available even if the department
+        # has a completed vehicle trip awaiting driver evaluation.
+        unrated_pending = (
+            get_unrated_bookings(name, dept)
+            if cat == "รถยนต์" and name and dept
+            else []
+        )
         if not name or not dept or ts is None:
             st.warning("⚠️ กรุณากรอกข้อมูลให้ครบถ้วน")
         elif unrated_pending:
