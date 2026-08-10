@@ -12,12 +12,57 @@ import difflib
 import calendar as calendar_module
 import html
 import re
+import os
+from zoneinfo import ZoneInfo
 
 # ==========================================
 # 1. การเชื่อมต่อ DATABASE (Supabase คงเดิม 100%)
 # ==========================================
-SUPABASE_URL = "https://qejqynbxdflwebzzwfzu.supabase.co" 
-SUPABASE_KEY = "sb_publishable_hvNQEPvuEAlXfVeCzpy7Ug_kzvihQqq"
+def get_runtime_setting(name, default=None, required=False):
+    """Read a deployment setting from Streamlit Secrets or a local environment."""
+    try:
+        value = st.secrets.get(name)
+    except Exception:
+        value = None
+    value = value or os.getenv(name) or default
+    if required and not value:
+        raise RuntimeError(
+            f"Missing {name}. Configure it in Streamlit Secrets before starting the web app."
+        )
+    return value
+
+
+SUPABASE_URL = get_runtime_setting(
+    "SUPABASE_URL", "https://qejqynbxdflwebzzwfzu.supabase.co"
+)
+SUPABASE_KEY = get_runtime_setting("SUPABASE_KEY", required=True)
+LINE_SERVICE_URL = get_runtime_setting("LINE_SERVICE_URL", required=True).rstrip("/")
+INTERNAL_API_TOKEN = get_runtime_setting("INTERNAL_API_TOKEN", required=True)
+
+# Booking start/end times in the legacy database are wall-clock Thailand times.
+# Keep that convention when reading existing bookings, while audit timestamps
+# are true timezone-aware instants and are always displayed in Asia/Bangkok.
+THAILAND_TZ = ZoneInfo("Asia/Bangkok")
+
+
+def thai_wall_now():
+    return datetime.now(THAILAND_TZ).replace(tzinfo=None)
+
+
+def booking_wall_datetime(value):
+    parsed = pd.to_datetime(value, errors="coerce")
+    if pd.isna(parsed):
+        return None
+    if getattr(parsed, "tzinfo", None) is not None:
+        parsed = parsed.tz_localize(None)
+    return parsed.to_pydatetime()
+
+
+def format_thai_audit_datetime(value):
+    parsed = pd.to_datetime(value, errors="coerce", utc=True)
+    if pd.isna(parsed):
+        return "-"
+    return parsed.tz_convert(THAILAND_TZ).strftime("%d/%m/%Y %H:%M")
 
 # ==========================================
 # 2. การตั้งค่าระบบ (แก้ไขรายชื่อได้ที่นี่โดยตรง)
@@ -30,7 +75,6 @@ APP_ICON_PATH = APP_DIR / "assets" / "book-smarter-plus-favicon.png"
 CURRENT_BOT_ID = "@119xqhqx"
 APP_VERSION = "1.0.2"
 LINE_ADD_FRIEND_URL = f"https://line.me/R/ti/p/{CURRENT_BOT_ID}"
-GROUP_ID = "Cad74a32468ca40051bd7071a6064660d" # ไอดีกลุ่มแจ้งเตือน
 
 # 🚗 ตั้งค่ารายชื่อรถยนต์ (ใช้ในการจองและประเมิน)
 SYS_CARS = ["Civic (ตุ้ม)", "Civic (บอล)", "Camry (เนก)", "MG", "MG (เนก)"]
@@ -378,7 +422,7 @@ def check_booking_conflict(resource, start_time_iso, end_time_iso, exclude_booki
 def get_unrated_bookings(name, dept):
     # ยาแรง: ล็อกทั้งแผนก หากมีใครคนใดคนหนึ่งในแผนกนี้ค้างประเมิน จะไม่ให้คนในแผนกนี้จองรถใหม่เด็ดขาด
     try:
-        now_iso = (datetime.utcnow() + timedelta(hours=7)).isoformat()
+        now_iso = thai_wall_now().isoformat()
         res = supabase.table("bookings").select("*").eq("dept", dept).eq("status", "Approved").in_("resource", SYS_CARS).lt("end_time", now_iso).gte("end_time", "2026-07-01T00:00:00").execute()
         
         matched_unrated = []
@@ -390,23 +434,34 @@ def get_unrated_bookings(name, dept):
         return []
     
 def send_line_notification(booking_id, resource, name, dept, t_start, t_end, purpose, destination, status_text="Pending"):
-    render_url = "https://line-booking-system.onrender.com/notify"
+    render_url = f"{LINE_SERVICE_URL}/notify"
     try:
         s_dt = pd.to_datetime(t_start)
         s_str = s_dt.strftime("%d/%m/%Y %H:%M")
         e_str = t_end if isinstance(t_end, str) else pd.to_datetime(t_end).strftime("%H:%M")
         payload = {
-            "id": booking_id, "target_id": GROUP_ID, 
+            "id": booking_id,
             "resource": resource, "name": name, "dept": dept, "date": s_str, "end_date": e_str, 
             "purpose": purpose, "destination": destination, "status": status_text
         }
-        requests.post(render_url, json=payload, timeout=30)
-    except: pass
+        response = requests.post(
+            render_url,
+            json=payload,
+            headers={"X-Internal-Token": INTERNAL_API_TOKEN},
+            timeout=30,
+        )
+        response.raise_for_status()
+        return True
+    except Exception as exc:
+        # Booking data is already stored in Supabase. Do not fail the booking page
+        # merely because a notification service is temporarily unavailable.
+        print(f"LINE notification failed: {exc}")
+        return False
 
 @st.cache_data(ttl=86400, show_spinner=False)
 def auto_delete_old_bookings():
     """Delete completed/stale booking rows older than 45 days, once per day."""
-    threshold = (datetime.utcnow() + timedelta(hours=7) - timedelta(days=45)).isoformat()
+    threshold = (thai_wall_now() - timedelta(days=45)).isoformat()
     try:
         # ไม่รับข้อมูลทุกคอลัมน์ของแถวที่ลบกลับมายัง Streamlit Cloud
         # ช่วยลดทั้งหน่วยความจำและปริมาณข้อมูล โดยยังลบ 45 วันเหมือนเดิม
@@ -588,7 +643,7 @@ def parse_availability_query(query, now=None):
     text = _normalize_search_text(query)
     if not text:
         return None, "กรุณาพิมพ์คำถามที่ต้องการค้นหา"
-    today = (now or (datetime.utcnow() + timedelta(hours=7))).date()
+    today = (now or thai_wall_now()).date()
     date_start, date_end, date_error = _parse_search_date_range(text, today)
     if date_error:
         return None, date_error
@@ -873,7 +928,7 @@ def render_month_calendar():
     st.caption("เลือกเดือนและประเภทเพื่อดูจำนวนทรัพยากรที่ใช้งาน พร้อมช่วงเวลาที่จองแล้ว")
     left, right = st.columns([1, 2])
     with left:
-        chosen_date = st.date_input("เลือกเดือน", value=datetime.now().date(), key="calendar_month_picker")
+        chosen_date = st.date_input("เลือกเดือน", value=thai_wall_now().date(), key="calendar_month_picker")
     with right:
         calendar_type = st.radio("แสดงปฏิทิน", ["รถยนต์", "ห้องประชุม"], horizontal=True, key="calendar_type")
     resources = get_calendar_resources(calendar_type)
@@ -984,7 +1039,7 @@ def render_management_schedule():
     with controls_right:
         selected_date = st.date_input(
             "เลือกวันที่" if view_mode == "รายวัน" else "เลือกเดือน",
-            value=datetime.now().date(),
+            value=thai_wall_now().date(),
             key="management_schedule_date",
         )
     with controls_link:
@@ -1054,7 +1109,7 @@ def render_management_schedule():
             destination = st.text_input("สถานที่ปลายทาง / Google Map", key="executive_destination")
             purpose = st.text_area("วัตถุประสงค์การใช้งาน", key="executive_purpose")
         with right:
-            today = datetime.now().date()
+            today = thai_wall_now().date()
             start_date = st.date_input("วันที่เริ่ม", min_value=today, key="executive_start_date")
             start_raw = st.text_input("เวลาเริ่ม (เช่น 0800)", max_chars=4, key="executive_start_time")
             end_date = st.date_input("วันที่สิ้นสุด", min_value=start_date, key="executive_end_date")
@@ -1068,7 +1123,7 @@ def render_management_schedule():
         except ValueError:
             st.error("กรุณากรอกเวลาให้ถูกต้อง เช่น 0800 และ 1700")
         else:
-            if start_time < datetime.now():
+            if start_time < thai_wall_now():
                 st.error("ไม่สามารถบันทึกเวลาย้อนหลังได้")
             elif start_time >= end_time:
                 st.error("เวลาเริ่มต้องมาก่อนเวลาสิ้นสุด")
@@ -1096,7 +1151,7 @@ def render_management_schedule():
                             "is_rated": True,
                             "is_executive_booking": True,
                             "last_updated_by": recorder,
-                            "last_updated_at": datetime.now().isoformat(),
+                            "last_updated_at": datetime.now(THAILAND_TZ).isoformat(),
                         }).execute()
                         st.success("บันทึกตารางผู้บริหารเรียบร้อย รถถูกกันคิวแล้ว")
                         st.rerun()
@@ -1122,7 +1177,7 @@ def render_management_schedule():
 
     executive_df["เวลาเริ่ม"] = pd.to_datetime(executive_df["start_time"], errors="coerce").dt.strftime("%d/%m/%Y %H:%M")
     executive_df["เวลาสิ้นสุด"] = pd.to_datetime(executive_df["end_time"], errors="coerce").dt.strftime("%d/%m/%Y %H:%M")
-    executive_df["แก้ไขล่าสุด"] = pd.to_datetime(executive_df.get("last_updated_at"), errors="coerce").dt.strftime("%d/%m/%Y %H:%M").fillna("-")
+    executive_df["แก้ไขล่าสุด"] = executive_df.get("last_updated_at").map(format_thai_audit_datetime)
     executive_df["บันทึก/แก้ไขล่าสุดโดย"] = executive_df.get("last_updated_by", executive_df["requester"]).fillna(executive_df["requester"])
     display = executive_df[["resource", "เวลาเริ่ม", "เวลาสิ้นสุด", "requester", "destination", "purpose", "บันทึก/แก้ไขล่าสุดโดย", "แก้ไขล่าสุด"]].copy()
     display.columns = ["รถยนต์", "เวลาเริ่ม", "เวลาสิ้นสุด", "ผู้บันทึก", "ปลายทาง", "วัตถุประสงค์", "บันทึก/แก้ไขล่าสุดโดย", "เวลาแก้ไขล่าสุด"]
@@ -1139,12 +1194,13 @@ def render_management_schedule():
             edit_destination = st.text_input("สถานที่ปลายทาง / Google Map", str(record.get("destination", "")), key="edit_executive_destination")
             edit_purpose = st.text_area("วัตถุประสงค์การใช้งาน", str(record.get("purpose", "")), key="edit_executive_purpose")
         with edit_right:
-            old_start = pd.to_datetime(record["start_time"]).to_pydatetime()
-            old_end = pd.to_datetime(record["end_time"]).to_pydatetime()
-            edit_start_date = st.date_input("วันที่เริ่ม", old_start.date(), key="edit_executive_start_date")
-            edit_start_raw = st.text_input("เวลาเริ่ม (เช่น 0800)", old_start.strftime("%H%M"), max_chars=4, key="edit_executive_start_time")
-            edit_end_date = st.date_input("วันที่สิ้นสุด", old_end.date(), key="edit_executive_end_date")
-            edit_end_raw = st.text_input("เวลาสิ้นสุด (เช่น 1700)", old_end.strftime("%H%M"), max_chars=4, key="edit_executive_end_time")
+            old_start = booking_wall_datetime(record["start_time"])
+            old_end = booking_wall_datetime(record["end_time"])
+            edit_key = f"edit_executive_{record['id']}"
+            edit_start_date = st.date_input("วันที่เริ่ม", old_start.date(), key=f"{edit_key}_start_date")
+            edit_start_raw = st.text_input("เวลาเริ่ม (เช่น 0800)", old_start.strftime("%H%M"), max_chars=4, key=f"{edit_key}_start_time")
+            edit_end_date = st.date_input("วันที่สิ้นสุด", old_end.date(), key=f"{edit_key}_end_date")
+            edit_end_raw = st.text_input("เวลาสิ้นสุด (เช่น 1700)", old_end.strftime("%H%M"), max_chars=4, key=f"{edit_key}_end_time")
         save_edit = st.form_submit_button("บันทึกการแก้ไข", type="primary", width="stretch")
 
     if save_edit:
@@ -1162,7 +1218,7 @@ def render_management_schedule():
                 supabase.table("bookings").update({
                     "resource": edit_resource, "destination": edit_destination, "purpose": edit_purpose,
                     "start_time": updated_start.isoformat(), "end_time": updated_end.isoformat(),
-                    "last_updated_by": recorder, "last_updated_at": datetime.now().isoformat(),
+                    "last_updated_by": recorder, "last_updated_at": datetime.now(THAILAND_TZ).isoformat(),
                 }).eq("id", record["id"]).execute()
                 st.success("แก้ไขรายการเรียบร้อย")
                 st.rerun()
@@ -1304,7 +1360,7 @@ if choice in ["🏠 หน้าแรก", "📝 จองใหม่"]:
         st.markdown('##### 📋 ข้อมูลรถและคนขับ')
     
     # --- คำนวณสถานะ Real-time ---
-    now_dt = datetime.utcnow() + timedelta(hours=7)
+    now_dt = thai_wall_now()
     t_today_start = now_dt.replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
     t_today_end = now_dt.replace(hour=23, minute=59, second=59, microsecond=999999).isoformat()
     
@@ -1464,7 +1520,7 @@ if choice in ["🏠 หน้าแรก", "📝 จองใหม่"]:
 
     # +++ โค้ดกระพริบโชว์รายชื่อผู้ค้างประเมินเพื่อกดดัน +++
     try:
-        now_iso_alert = (datetime.utcnow() + timedelta(hours=7)).isoformat()
+        now_iso_alert = thai_wall_now().isoformat()
         res_alert = supabase.table("bookings").select("requester, dept, is_rated").eq("status", "Approved").in_("resource", SYS_CARS).lt("end_time", now_iso_alert).gte("end_time", "2026-07-01T00:00:00").execute()
         
         if res_alert.data:
@@ -1498,7 +1554,7 @@ if choice in ["🏠 หน้าแรก", "📝 จองใหม่"]:
         dept = st.selectbox("แผนก", SYS_DEPTS)
 
     with col2:
-        today = datetime.now().date()
+        today = thai_wall_now().date()
         if "booking_start_date" not in st.session_state or st.session_state["booking_start_date"] < today:
             st.session_state["booking_start_date"] = today
         d_start = st.date_input(
@@ -1537,7 +1593,7 @@ if choice in ["🏠 หน้าแรก", "📝 จองใหม่"]:
         elif unrated_pending:
             car_names = ", ".join(sorted(set(d['resource'] for d in unrated_pending)))
             st.error(f"❌ คุณ {name} ({dept}) มีรายการที่ยังไม่ได้ให้คะแนนคนขับ ({car_names}) กรุณาไปที่เมนู '⭐ ประเมินการใช้งาน' เพื่อให้คะแนนก่อน แล้วค่อยกลับมาจองใหม่นะครับ")
-        elif ts < datetime.now(): 
+        elif ts < thai_wall_now(): 
             st.error("❌ ไม่สามารถจองย้อนหลังได้ กรุณาเลือกเวลาปัจจุบันหรือล่วงหน้า")
         elif ts >= te:
             st.error("❌ เวลาเริ่มต้องมาก่อนเวลาสิ้นสุด")
@@ -1584,7 +1640,7 @@ elif choice == "📅 ตารางงาน (Real-time)":
     search_q = f_c1.text_input("🔍 ค้นหาชื่อผู้จอง / สถานที่")
     view_cat = f_c2.selectbox("กรองตามประเภท", ["ทั้งหมด", "รถยนต์", "ห้องประชุม"])
     
-    t_today_start = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
+    t_today_start = thai_wall_now().replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
     try:
         res = supabase.table("bookings").select("*").eq("status", "Approved").gte("start_time", t_today_start).execute()
         df = pd.DataFrame(res.data)
@@ -1677,7 +1733,7 @@ elif choice == "📅 ตารางงาน (Real-time)":
 # ==========================================
 elif choice == "⭐ ประเมินการใช้งาน":
     st.subheader("⭐ ประเมินการปฏิบัติงานพนักงานขับรถ")
-    now_iso = (datetime.utcnow() + timedelta(hours=7)).isoformat()
+    now_iso = thai_wall_now().isoformat()
     try:
         res = supabase.table("bookings").select("*").eq("status", "Approved").in_("resource", SYS_CARS).lt("end_time", now_iso).gte("end_time", "2026-07-01T00:00:00").execute()
         data = res.data if res.data else []
