@@ -73,7 +73,7 @@ APP_LOGO_PATH = APP_DIR / "assets" / "book-smarter-plus-logo.png"
 APP_ICON_PATH = APP_DIR / "assets" / "book-smarter-plus-favicon.png"
 
 CURRENT_BOT_ID = "@119xqhqx"
-APP_VERSION = "1.0.2"
+APP_VERSION = "1.0.6"
 LINE_ADD_FRIEND_URL = f"https://line.me/R/ti/p/{CURRENT_BOT_ID}"
 
 # 🚗 ตั้งค่ารายชื่อรถยนต์ (ใช้ในการจองและประเมิน)
@@ -268,8 +268,35 @@ st.markdown("""
     }
 
     section[data-testid="stSidebar"] {
-        background: linear-gradient(180deg, rgba(246, 252, 255, 0.98), rgba(242, 250, 244, 0.98));
-        border-right: 1px solid rgba(22, 139, 210, 0.12);
+        min-width: 270px;
+        max-width: 270px;
+        background: linear-gradient(180deg, #0A315B 0%, #08294D 55%, #061F3C 100%);
+        border-right: 1px solid rgba(118, 187, 236, 0.22);
+        box-shadow: 8px 0 28px rgba(5, 31, 58, 0.13);
+    }
+
+    section[data-testid="stSidebar"] > div {
+        width: 270px;
+    }
+
+    section[data-testid="stSidebar"] [data-testid="stSidebarContent"] {
+        padding-top: 0.7rem;
+    }
+
+    section[data-testid="stSidebar"] [data-testid="stImage"] {
+        padding: 0.55rem;
+        border-radius: 14px;
+        background: rgba(255, 255, 255, 0.97);
+        box-shadow: 0 8px 20px rgba(0, 0, 0, 0.12);
+    }
+
+    section[data-testid="stSidebar"] hr {
+        border-color: rgba(203, 226, 244, 0.18);
+    }
+
+    section[data-testid="stSidebar"] [data-testid="stSidebarHeader"] button,
+    section[data-testid="stSidebar"] [data-testid="stSidebarCollapseButton"] button {
+        color: #FFFFFF !important;
     }
 
     .sidebar-brand-divider {
@@ -299,99 +326,88 @@ st.markdown("""
         text-shadow: 0 2px 12px rgba(22, 139, 210, 0.12);
     }
 
-    /* เมนูหลักด้านบน: ใช้ radio จริงเพื่อคงการทำงานและ keyboard accessibility */
-    div[data-testid="stRadio"]:has(div[role="radiogroup"][aria-label="เมนูหลัก"]) {
-        position: sticky;
-        top: 3.6rem;
-        z-index: 900;
-        margin: 0 0 1.35rem;
-        padding: 0.7rem;
-        border: 1px solid rgba(22, 139, 210, 0.14);
-        border-radius: 20px;
-        background: rgba(255, 255, 255, 0.86);
-        box-shadow: 0 12px 32px rgba(30, 78, 110, 0.10);
-        backdrop-filter: blur(14px);
+    /* เมนูหลักแนวตั้งใน Sidebar: ใช้ radio เดิมเพื่อคง choice และลอจิกทุกหน้า */
+    section[data-testid="stSidebar"] div[data-testid="stRadio"]:has(div[role="radiogroup"][aria-label="เมนูหลัก"]) {
+        margin: 0.25rem 0 0.65rem;
+        padding: 0.45rem;
+        border: 1px solid rgba(157, 205, 239, 0.12);
+        border-radius: 16px;
+        background: rgba(3, 25, 48, 0.24);
     }
 
-    div[role="radiogroup"][aria-label="เมนูหลัก"] {
-        display: grid !important;
-        grid-template-columns: repeat(6, minmax(0, 1fr));
-        gap: 0.7rem;
+    section[data-testid="stSidebar"] div[role="radiogroup"][aria-label="เมนูหลัก"] {
+        display: flex !important;
+        flex-direction: column;
+        gap: 0.32rem;
         width: 100%;
     }
 
-    div[role="radiogroup"][aria-label="เมนูหลัก"] > label {
+    section[data-testid="stSidebar"] div[role="radiogroup"][aria-label="เมนูหลัก"] > label {
         position: relative;
         display: flex !important;
         align-items: center;
-        justify-content: center;
-        min-height: 58px;
+        justify-content: flex-start;
+        min-height: 46px;
         margin: 0 !important;
-        padding: 0.72rem 0.55rem !important;
-        border: 1px solid rgba(22, 139, 210, 0.15);
-        border-radius: 14px;
-        background: linear-gradient(145deg, #FFFFFF, #F4FAFF);
-        box-shadow: 0 5px 14px rgba(30, 78, 110, 0.08);
+        padding: 0.68rem 0.72rem !important;
+        border: 1px solid transparent;
+        border-radius: 11px;
+        background: transparent;
         cursor: pointer;
         transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease, background 0.18s ease;
     }
 
     /* Streamlit รุ่นที่ใช้ BaseWeb (localhost) */
-    div[role="radiogroup"][aria-label="เมนูหลัก"] > label[data-baseweb="radio"] > div:first-child {
+    section[data-testid="stSidebar"] div[role="radiogroup"][aria-label="เมนูหลัก"] > label[data-baseweb="radio"] > div:first-child {
         position: absolute;
         opacity: 0;
         pointer-events: none;
     }
 
     /* Streamlit Cloud รุ่นที่ใช้ React Aria */
-    div[role="radiogroup"][aria-label="เมนูหลัก"] > label[data-testid="stRadioOption"] > div:last-child > div:first-child > div:first-child {
+    section[data-testid="stSidebar"] div[role="radiogroup"][aria-label="เมนูหลัก"] > label[data-testid="stRadioOption"] > div:last-child > div:first-child > div:first-child {
         display: none !important;
     }
 
-    div[role="radiogroup"][aria-label="เมนูหลัก"] > label > div:last-child,
-    div[role="radiogroup"][aria-label="เมนูหลัก"] > label [data-testid="stMarkdownContainer"] {
+    section[data-testid="stSidebar"] div[role="radiogroup"][aria-label="เมนูหลัก"] > label > div:last-child,
+    section[data-testid="stSidebar"] div[role="radiogroup"][aria-label="เมนูหลัก"] > label [data-testid="stMarkdownContainer"] {
         width: 100%;
     }
 
-    div[role="radiogroup"][aria-label="เมนูหลัก"] > label p {
+    section[data-testid="stSidebar"] div[role="radiogroup"][aria-label="เมนูหลัก"] > label p {
         margin: 0;
-        color: var(--brand-ink) !important;
-        font-size: clamp(0.82rem, 1vw, 0.98rem);
-        font-weight: 700;
+        color: #DCEBFA !important;
+        font-size: 0.9rem;
+        font-weight: 650;
         line-height: 1.25;
-        text-align: center;
+        text-align: left;
         white-space: nowrap;
     }
 
-    div[role="radiogroup"][aria-label="เมนูหลัก"] > label:hover {
-        transform: translateY(-2px);
-        border-color: rgba(22, 139, 210, 0.42);
-        box-shadow: 0 10px 22px rgba(22, 139, 210, 0.14);
+    section[data-testid="stSidebar"] div[role="radiogroup"][aria-label="เมนูหลัก"] > label:hover {
+        transform: translateX(3px);
+        border-color: rgba(118, 187, 236, 0.24);
+        background: rgba(64, 139, 201, 0.16);
     }
 
-    div[role="radiogroup"][aria-label="เมนูหลัก"] > label:has(input:checked),
-    div[role="radiogroup"][aria-label="เมนูหลัก"] > label[data-selected="true"] {
-        border-color: transparent;
-        background: linear-gradient(135deg, var(--brand-blue), #39B8C9 55%, var(--brand-green));
-        box-shadow: 0 10px 24px rgba(22, 139, 210, 0.26);
-        transform: translateY(-1px);
+    section[data-testid="stSidebar"] div[role="radiogroup"][aria-label="เมนูหลัก"] > label:has(input:checked),
+    section[data-testid="stSidebar"] div[role="radiogroup"][aria-label="เมนูหลัก"] > label[data-selected="true"] {
+        border-color: rgba(112, 198, 255, 0.35);
+        border-left: 4px solid #61C9FF;
+        background: linear-gradient(100deg, rgba(29, 102, 173, 0.95), rgba(27, 89, 151, 0.82));
+        box-shadow: 0 8px 18px rgba(0, 0, 0, 0.16);
+        transform: none;
     }
 
-    div[role="radiogroup"][aria-label="เมนูหลัก"] > label:has(input:checked) p,
-    div[role="radiogroup"][aria-label="เมนูหลัก"] > label[data-selected="true"] p {
+    section[data-testid="stSidebar"] div[role="radiogroup"][aria-label="เมนูหลัก"] > label:has(input:checked) p,
+    section[data-testid="stSidebar"] div[role="radiogroup"][aria-label="เมนูหลัก"] > label[data-selected="true"] p {
         color: #FFFFFF !important;
         text-shadow: 0 1px 3px rgba(0, 0, 0, 0.16);
     }
 
-    div[role="radiogroup"][aria-label="เมนูหลัก"] > label:has(input:focus-visible) {
-        outline: 3px solid rgba(22, 139, 210, 0.30);
+    section[data-testid="stSidebar"] div[role="radiogroup"][aria-label="เมนูหลัก"] > label:has(input:focus-visible) {
+        outline: 3px solid rgba(97, 201, 255, 0.34);
         outline-offset: 2px;
-    }
-
-    @media (max-width: 1100px) {
-        div[role="radiogroup"][aria-label="เมนูหลัก"] {
-            grid-template-columns: repeat(3, minmax(0, 1fr));
-        }
     }
 
     @media (max-width: 640px) {
@@ -402,25 +418,22 @@ st.markdown("""
             padding-bottom: 2.5rem;
         }
 
-        div[data-testid="stRadio"]:has(div[role="radiogroup"][aria-label="เมนูหลัก"]) {
-            position: relative;
-            top: auto;
-            padding: 0.55rem;
-            border-radius: 16px;
+        section[data-testid="stSidebar"] {
+            min-width: min(86vw, 300px);
+            max-width: min(86vw, 300px);
         }
 
-        div[role="radiogroup"][aria-label="เมนูหลัก"] {
-            grid-template-columns: repeat(2, minmax(0, 1fr));
-            gap: 0.5rem;
+        section[data-testid="stSidebar"] > div {
+            width: min(86vw, 300px);
         }
 
-        div[role="radiogroup"][aria-label="เมนูหลัก"] > label {
-            min-height: 52px;
-            padding: 0.58rem 0.35rem !important;
+        section[data-testid="stSidebar"] div[role="radiogroup"][aria-label="เมนูหลัก"] > label {
+            min-height: 48px;
+            padding: 0.72rem 0.75rem !important;
         }
 
-        div[role="radiogroup"][aria-label="เมนูหลัก"] > label p {
-            font-size: 0.82rem;
+        section[data-testid="stSidebar"] div[role="radiogroup"][aria-label="เมนูหลัก"] > label p {
+            font-size: 0.92rem;
         }
 
         .main-title {
@@ -1440,7 +1453,7 @@ st.sidebar.markdown('<div class="sidebar-brand-divider"></div>', unsafe_allow_ht
 st.sidebar.image(str(APP_LOGO_PATH), width="stretch")
 st.sidebar.link_button(label="เพิ่มเพื่อน LINE (ดูคิว/สถานะ)", url=LINE_ADD_FRIEND_URL, width="stretch", type="primary")
 st.sidebar.markdown(
-    f"<p style='text-align: center; color: gray; font-size: 12px;'>"
+    f"<p style='text-align: center; color: #B8CCE0; font-size: 12px;'>"
     f"Book Smarter Plus+ · v{APP_VERSION}<br>Line ID: {CURRENT_BOT_ID}</p>",
     unsafe_allow_html=True,
 )
@@ -1448,17 +1461,7 @@ st.sidebar.markdown(
 if pending_count > 0:
     st.sidebar.markdown(f'<p class="blink">📢 มีรายการรออนุมัติ: {pending_count}</p>', unsafe_allow_html=True)
 
-st.sidebar.markdown("---")
-
-if st.session_state["admin_logged_in"]:
-    st.sidebar.success(f"👤 เข้าสู่ระบบแล้ว:\n**{st.session_state['admin_user']}**")
-    if st.sidebar.button("🚪 ออกจากระบบ (Logout)", width="stretch"):
-        st.session_state["admin_logged_in"] = False
-        st.session_state["admin_user"] = ""
-        st.rerun()
-    st.sidebar.markdown("---")
-
-# เมนูหลักด้านบน (คงค่า choice เดิม เพื่อไม่กระทบลอจิกแต่ละหน้า)
+# เมนูหลักใน Sidebar (คง key และค่า choice เดิม เพื่อไม่กระทบลอจิกแต่ละหน้า)
 menu = ["🏠 หน้าแรก", "📝 จองใหม่", "📅 ตารางงาน (Real-time)", "👔 ตารางผู้บริหาร", "⭐ ประเมินการใช้งาน", "🔑 Admin (อนุมัติ)", "📊 รายงานประจำเดือน"]
 nav_labels = {
     "🏠 หน้าแรก": "🏠 หน้าแรก",
@@ -1479,14 +1482,24 @@ def format_nav_label(menu_item):
         return f"{label} · {pending_count}"
     return label
 
-choice = st.radio(
+choice = st.sidebar.radio(
     "เมนูหลัก",
     menu,
     key="top_nav",
-    horizontal=True,
+    horizontal=False,
     format_func=format_nav_label,
     label_visibility="collapsed",
 )
+
+st.sidebar.markdown("---")
+
+if st.session_state["admin_logged_in"]:
+    st.sidebar.success(f"👤 เข้าสู่ระบบแล้ว:\n**{st.session_state['admin_user']}**")
+    if st.sidebar.button("🚪 ออกจากระบบ (Logout)", width="stretch"):
+        st.session_state["admin_logged_in"] = False
+        st.session_state["admin_user"] = ""
+        st.rerun()
+    st.sidebar.markdown("---")
 
 # ==========================================
 # 7. หน้าจองใหม่ (BOOKING)
