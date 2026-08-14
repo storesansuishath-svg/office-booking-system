@@ -381,6 +381,20 @@ st.markdown("""
         div[role="radiogroup"][aria-label="เมนูหลัก"] > label p {
             font-size: 0.82rem;
         }
+
+        .main-title {
+            font-size: 1.9rem;
+            line-height: 1.25;
+            margin-bottom: 1rem;
+        }
+
+        [data-testid="stMetric"] {
+            padding: 0.7rem 0.55rem;
+        }
+
+        [data-testid="stMetricLabel"] {
+            font-size: 0.78rem;
+        }
     }
     
     [data-testid="stLinkButton"] a {
@@ -940,29 +954,70 @@ def render_month_calendar():
         st.error(f"ไม่สามารถโหลดปฏิทินได้: {exc}")
         return
 
-    st.markdown(f"#### {calendar_module.month_name[chosen_date.month]} {chosen_date.year} — {calendar_type}")
-    headers = st.columns(7)
-    for col, label in zip(headers, ["จันทร์", "อังคาร", "พุธ", "พฤหัสบดี", "ศุกร์", "เสาร์", "อาทิตย์"]):
-        col.markdown(f"**{label}**")
-    for week in calendar_module.monthcalendar(chosen_date.year, chosen_date.month):
-        columns = st.columns(7)
-        for column, day in zip(columns, week):
-            with column:
-                if day == 0:
-                    st.write("")
-                    continue
-                current_date = datetime(chosen_date.year, chosen_date.month, day).date()
-                used_resources = usage.get(current_date, {})
-                with st.container(border=True):
-                    st.markdown(f"**{day}**")
-                    if not used_resources:
-                        st.caption(f"🟢 ว่าง {len(resources)}/{len(resources)}")
-                    else:
-                        booking_count = sum(len(slots) for slots in used_resources.values())
-                        st.caption(f"🔴 ใช้งาน {len(used_resources)}/{len(resources)} · {booking_count} รายการ")
-                        for resource, slots in sorted(used_resources.items()):
-                            st.caption(f"• {_short_resource_name(resource)}")
-                            st.caption("  " + ", ".join(sorted(slots)))
+    calendar_cells = []
+    for day in [item for week in calendar_module.monthcalendar(chosen_date.year, chosen_date.month) for item in week]:
+        if day == 0:
+            calendar_cells.append('<div class="booking-calendar__blank" aria-hidden="true"></div>')
+            continue
+
+        current_date = datetime(chosen_date.year, chosen_date.month, day).date()
+        used_resources = usage.get(current_date, {})
+        if not used_resources:
+            calendar_cells.append(
+                f'<article class="booking-calendar__day booking-calendar__day--free">'
+                f'<strong>{day}</strong><span>🟢 ว่าง {len(resources)}/{len(resources)}</span></article>'
+            )
+            continue
+
+        booking_count = sum(len(slots) for slots in used_resources.values())
+        detail_lines = []
+        for resource, slots in sorted(used_resources.items()):
+            detail_lines.append(
+                f'<span class="booking-calendar__resource">{html.escape(_short_resource_name(resource))}</span>'
+                f'<span class="booking-calendar__time">{html.escape(", ".join(sorted(slots)))}</span>'
+            )
+        calendar_cells.append(
+            f'<article class="booking-calendar__day booking-calendar__day--busy">'
+            f'<strong>{day}</strong><span class="booking-calendar__count">ใช้งาน {len(used_resources)}/{len(resources)} · {booking_count} รายการ</span>'
+            f'<div class="booking-calendar__details">{"".join(detail_lines)}</div></article>'
+        )
+
+    weekdays = "".join(f'<span>{label}</span>' for label in ["จันทร์", "อังคาร", "พุธ", "พฤหัสบดี", "ศุกร์", "เสาร์", "อาทิตย์"])
+    st.markdown(
+        f'''<style>
+        .booking-calendar {{ margin: 0.35rem 0 0.7rem; }}
+        .booking-calendar__title {{ display:flex; justify-content:space-between; gap:1rem; align-items:baseline; margin:0 0 0.75rem; }}
+        .booking-calendar__title h4 {{ margin:0; color:#0b4f80; font-size:1.14rem; }}
+        .booking-calendar__title span {{ color:#49677a; font-size:0.82rem; }}
+        .booking-calendar__weekdays, .booking-calendar__grid {{ display:grid; grid-template-columns:repeat(7,minmax(0,1fr)); gap:0.38rem; }}
+        .booking-calendar__weekdays span {{ text-align:center; color:#315165; font-size:0.76rem; font-weight:700; padding:0.2rem 0; }}
+        .booking-calendar__day, .booking-calendar__blank {{ min-height:108px; padding:0.55rem; border-radius:10px; border:1px solid #d3e2eb; background:#fff; overflow:hidden; }}
+        .booking-calendar__day strong {{ display:block; color:#112f43; font-size:0.92rem; margin-bottom:0.25rem; }}
+        .booking-calendar__day--free span {{ color:#34724a; font-size:0.77rem; font-weight:600; }}
+        .booking-calendar__day--busy {{ background:#e8f1f7; border-left:4px solid #071d2c; }}
+        .booking-calendar__count {{ display:block; color:#071d2c; font-size:0.76rem; font-weight:800; line-height:1.35; }}
+        .booking-calendar__details {{ display:grid; gap:0.12rem; margin-top:0.38rem; }}
+        .booking-calendar__resource {{ color:#071d2c; font-size:0.73rem; font-weight:800; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }}
+        .booking-calendar__time {{ color:#183b52; font-size:0.71rem; line-height:1.25; }}
+        @media (max-width: 640px) {{
+            .booking-calendar__title {{ align-items:flex-start; flex-direction:column; gap:0.15rem; }}
+            .booking-calendar__weekdays, .booking-calendar__grid {{ gap:0.18rem; }}
+            .booking-calendar__weekdays span {{ font-size:0.62rem; }}
+            .booking-calendar__day, .booking-calendar__blank {{ min-height:72px; padding:0.34rem 0.26rem; border-radius:7px; }}
+            .booking-calendar__day strong {{ font-size:0.78rem; margin-bottom:0.16rem; }}
+            .booking-calendar__day--free span, .booking-calendar__count {{ font-size:0.61rem; line-height:1.2; }}
+            .booking-calendar__details {{ margin-top:0.22rem; gap:0; }}
+            .booking-calendar__resource {{ display:none; }}
+            .booking-calendar__time {{ color:#071d2c; font-size:0.6rem; font-weight:700; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }}
+        }}
+        </style>
+        <section class="booking-calendar" aria-label="ปฏิทินการใช้งาน {html.escape(calendar_type)}">
+          <div class="booking-calendar__title"><h4>{calendar_module.month_name[chosen_date.month]} {chosen_date.year} — {html.escape(calendar_type)}</h4><span>สีเข้ม = มีการใช้งาน</span></div>
+          <div class="booking-calendar__weekdays">{weekdays}</div>
+          <div class="booking-calendar__grid">{"".join(calendar_cells)}</div>
+        </section>''',
+        unsafe_allow_html=True,
+    )
     st.caption("ตัวเลข “ใช้งาน” คือจำนวนรถหรือห้องที่มีรายการอนุมัติในวันนั้น; เวลาที่แสดงคือช่วงเวลาที่ถูกจองแล้ว")
 
 # ==========================================
