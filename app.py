@@ -222,9 +222,49 @@ st.markdown("""
     }
 
     [data-testid="stMainBlockContainer"] {
-        max-width: 1500px;
-        padding-top: 1.5rem;
+        max-width: 1420px;
+        padding-top: 1.25rem;
         padding-bottom: 4rem;
+    }
+
+    /* Surface system: visual-only cards for forms, metrics and tables. */
+    [data-testid="stForm"] {
+        padding: clamp(1rem, 2vw, 1.5rem);
+        border: 1px solid rgba(22, 139, 210, 0.14) !important;
+        border-radius: 18px !important;
+        background: rgba(255, 255, 255, 0.88);
+        box-shadow: 0 12px 30px rgba(24, 73, 105, 0.08);
+    }
+
+    [data-testid="stMetric"] {
+        min-height: 108px;
+        padding: 1rem 1.1rem;
+        border: 1px solid rgba(22, 139, 210, 0.14);
+        border-radius: 16px;
+        background: rgba(255, 255, 255, 0.9);
+        box-shadow: 0 8px 22px rgba(24, 73, 105, 0.07);
+    }
+
+    [data-testid="stDataFrame"], [data-testid="stTable"] {
+        overflow: hidden;
+        border: 1px solid rgba(22, 139, 210, 0.14);
+        border-radius: 14px;
+        background: #FFFFFF;
+        box-shadow: 0 8px 22px rgba(24, 73, 105, 0.06);
+    }
+
+    [data-testid="stButton"] button,
+    [data-testid="stFormSubmitButton"] button {
+        min-height: 44px;
+        border-radius: 11px;
+        font-weight: 700;
+    }
+
+    [data-testid="stTextInput"] input,
+    [data-testid="stTextArea"] textarea,
+    [data-testid="stDateInput"] input,
+    [data-testid="stSelectbox"] > div > div {
+        border-radius: 10px !important;
     }
 
     section[data-testid="stSidebar"] {
@@ -356,9 +396,10 @@ st.markdown("""
 
     @media (max-width: 640px) {
         [data-testid="stMainBlockContainer"] {
-            padding-left: 0.8rem;
-            padding-right: 0.8rem;
-            padding-top: 0.8rem;
+            padding-left: 0.65rem;
+            padding-right: 0.65rem;
+            padding-top: 0.55rem;
+            padding-bottom: 2.5rem;
         }
 
         div[data-testid="stRadio"]:has(div[role="radiogroup"][aria-label="เมนูหลัก"]) {
@@ -383,17 +424,35 @@ st.markdown("""
         }
 
         .main-title {
-            font-size: 1.9rem;
+            font-size: clamp(1.55rem, 7vw, 1.9rem);
             line-height: 1.25;
             margin-bottom: 1rem;
         }
 
+        [data-testid="stForm"] {
+            padding: 0.85rem;
+            border-radius: 14px !important;
+        }
+
         [data-testid="stMetric"] {
-            padding: 0.7rem 0.55rem;
+            min-height: 88px;
+            padding: 0.75rem 0.65rem;
         }
 
         [data-testid="stMetricLabel"] {
             font-size: 0.78rem;
+        }
+
+        [data-testid="stDataFrame"], [data-testid="stTable"] {
+            border-radius: 10px;
+            overflow-x: auto;
+        }
+
+        [data-testid="stButton"] button,
+        [data-testid="stFormSubmitButton"] button,
+        [data-testid="stLinkButton"] a {
+            width: 100%;
+            min-height: 46px;
         }
     }
     
@@ -938,8 +997,7 @@ def load_month_usage(resources, month_start, next_month):
 def render_month_calendar():
     """First-page availability calendar; cars are selected by default."""
     st.markdown("---")
-    st.subheader("🗓️ ปฏิทินการใช้งาน")
-    st.caption("เลือกเดือนและประเภทเพื่อดูจำนวนทรัพยากรที่ใช้งาน พร้อมช่วงเวลาที่จองแล้ว")
+    st.markdown('<div class="calendar-section-heading"><span>🗓️</span><div><h2>ปฏิทินการใช้งาน</h2><p>เลือกเดือนและประเภท เพื่อดูช่วงเวลาที่จองแล้ว</p></div></div>', unsafe_allow_html=True)
     left, right = st.columns([1, 2])
     with left:
         chosen_date = st.date_input("เลือกเดือน", value=thai_wall_now().date(), key="calendar_month_picker")
@@ -955,16 +1013,18 @@ def render_month_calendar():
         return
 
     calendar_cells = []
+    today = thai_wall_now().date()
     for day in [item for week in calendar_module.monthcalendar(chosen_date.year, chosen_date.month) for item in week]:
         if day == 0:
             calendar_cells.append('<div class="booking-calendar__blank" aria-hidden="true"></div>')
             continue
 
         current_date = datetime(chosen_date.year, chosen_date.month, day).date()
+        today_class = " booking-calendar__day--today" if current_date == today else ""
         used_resources = usage.get(current_date, {})
         if not used_resources:
             calendar_cells.append(
-                f'<article class="booking-calendar__day booking-calendar__day--free">'
+                f'<article class="booking-calendar__day booking-calendar__day--free{today_class}">'
                 f'<strong>{day}</strong><span>🟢 ว่าง {len(resources)}/{len(resources)}</span></article>'
             )
             continue
@@ -976,48 +1036,36 @@ def render_month_calendar():
                 f'<span class="booking-calendar__resource">{html.escape(_short_resource_name(resource))}</span>'
                 f'<span class="booking-calendar__time">{html.escape(", ".join(sorted(slots)))}</span>'
             )
+        load_ratio = len(used_resources) / max(len(resources), 1)
+        load_class = "booking-calendar__day--full" if load_ratio >= 1 else ("booking-calendar__day--high" if load_ratio >= 0.6 else "booking-calendar__day--busy")
         calendar_cells.append(
-            f'<article class="booking-calendar__day booking-calendar__day--busy">'
+            f'<article class="booking-calendar__day {load_class}{today_class}">'
             f'<strong>{day}</strong><span class="booking-calendar__count">ใช้งาน {len(used_resources)}/{len(resources)} · {booking_count} รายการ</span>'
             f'<div class="booking-calendar__details">{"".join(detail_lines)}</div></article>'
         )
 
     weekdays = "".join(f'<span>{label}</span>' for label in ["จันทร์", "อังคาร", "พุธ", "พฤหัสบดี", "ศุกร์", "เสาร์", "อาทิตย์"])
-    st.markdown(
-        f'''<style>
-        .booking-calendar {{ margin: 0.35rem 0 0.7rem; }}
-        .booking-calendar__title {{ display:flex; justify-content:space-between; gap:1rem; align-items:baseline; margin:0 0 0.75rem; }}
-        .booking-calendar__title h4 {{ margin:0; color:#0b4f80; font-size:1.14rem; }}
-        .booking-calendar__title span {{ color:#49677a; font-size:0.82rem; }}
-        .booking-calendar__weekdays, .booking-calendar__grid {{ display:grid; grid-template-columns:repeat(7,minmax(0,1fr)); gap:0.38rem; }}
-        .booking-calendar__weekdays span {{ text-align:center; color:#315165; font-size:0.76rem; font-weight:700; padding:0.2rem 0; }}
-        .booking-calendar__day, .booking-calendar__blank {{ min-height:108px; padding:0.55rem; border-radius:10px; border:1px solid #d3e2eb; background:#fff; overflow:hidden; }}
-        .booking-calendar__day strong {{ display:block; color:#112f43; font-size:0.92rem; margin-bottom:0.25rem; }}
-        .booking-calendar__day--free span {{ color:#34724a; font-size:0.77rem; font-weight:600; }}
-        .booking-calendar__day--busy {{ background:#e8f1f7; border-left:4px solid #071d2c; }}
-        .booking-calendar__count {{ display:block; color:#071d2c; font-size:0.76rem; font-weight:800; line-height:1.35; }}
-        .booking-calendar__details {{ display:grid; gap:0.12rem; margin-top:0.38rem; }}
-        .booking-calendar__resource {{ color:#071d2c; font-size:0.73rem; font-weight:800; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }}
-        .booking-calendar__time {{ color:#183b52; font-size:0.71rem; line-height:1.25; }}
-        @media (max-width: 640px) {{
-            .booking-calendar__title {{ align-items:flex-start; flex-direction:column; gap:0.15rem; }}
-            .booking-calendar__weekdays, .booking-calendar__grid {{ gap:0.18rem; }}
-            .booking-calendar__weekdays span {{ font-size:0.62rem; }}
-            .booking-calendar__day, .booking-calendar__blank {{ min-height:72px; padding:0.34rem 0.26rem; border-radius:7px; }}
-            .booking-calendar__day strong {{ font-size:0.78rem; margin-bottom:0.16rem; }}
-            .booking-calendar__day--free span, .booking-calendar__count {{ font-size:0.61rem; line-height:1.2; }}
-            .booking-calendar__details {{ margin-top:0.22rem; gap:0; }}
-            .booking-calendar__resource {{ display:none; }}
-            .booking-calendar__time {{ color:#071d2c; font-size:0.6rem; font-weight:700; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }}
-        }}
-        </style>
-        <section class="booking-calendar" aria-label="ปฏิทินการใช้งาน {html.escape(calendar_type)}">
-          <div class="booking-calendar__title"><h4>{calendar_module.month_name[chosen_date.month]} {chosen_date.year} — {html.escape(calendar_type)}</h4><span>สีเข้ม = มีการใช้งาน</span></div>
-          <div class="booking-calendar__weekdays">{weekdays}</div>
-          <div class="booking-calendar__grid">{"".join(calendar_cells)}</div>
-        </section>''',
-        unsafe_allow_html=True,
+    thai_months = ["", "มกราคม", "กุมภาพันธ์", "มีนาคม", "เมษายน", "พฤษภาคม", "มิถุนายน", "กรกฎาคม", "สิงหาคม", "กันยายน", "ตุลาคม", "พฤศจิกายน", "ธันวาคม"]
+    days_in_month = calendar_module.monthrange(chosen_date.year, chosen_date.month)[1]
+    busy_days = sum(1 for day_number in range(1, days_in_month + 1) if usage.get(datetime(chosen_date.year, chosen_date.month, day_number).date()))
+    calendar_markup = (
+        '<style>'
+        '.calendar-section-heading{display:flex;align-items:flex-start;gap:.85rem;margin:.4rem 0 1rem}.calendar-section-heading>span{display:grid;place-items:center;width:46px;height:46px;border-radius:14px;background:#e8f4fb;font-size:1.45rem}.calendar-section-heading h2{margin:0;color:#102f45;font-size:clamp(1.45rem,2.5vw,2rem)}.calendar-section-heading p{margin:.25rem 0 0;color:#607887;font-size:.9rem}'
+        '.booking-calendar{margin:.45rem 0 .8rem;padding:1rem;border:1px solid #cfe0ea;border-radius:18px;background:rgba(255,255,255,.94);box-shadow:0 12px 32px rgba(24,73,105,.09)}'
+        '.booking-calendar__title{display:flex;justify-content:space-between;gap:1rem;align-items:center;margin:0 0 .8rem}.booking-calendar__title h4{margin:0;color:#071d2c;font-size:1.2rem}.booking-calendar__legend{display:flex;gap:.55rem;flex-wrap:wrap}.booking-calendar__legend span,.booking-calendar__summary span{padding:.28rem .55rem;border-radius:999px;background:#edf4f8;color:#183b52;font-size:.75rem;font-weight:750}.booking-calendar__legend .dark{background:#071d2c;color:#fff}'
+        '.booking-calendar__summary{display:flex;gap:.45rem;flex-wrap:wrap;margin-bottom:.8rem}.booking-calendar__weekdays,.booking-calendar__grid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:.42rem}.booking-calendar__weekdays span{text-align:center;color:#294b61;font-size:.76rem;font-weight:800;padding:.2rem 0}'
+        '.booking-calendar__day,.booking-calendar__blank{min-height:116px;padding:.58rem;border-radius:11px;border:1px solid #d3e2eb;background:#fff;overflow:hidden}.booking-calendar__day{transition:transform .15s ease,box-shadow .15s ease}.booking-calendar__day:hover{transform:translateY(-2px);box-shadow:0 8px 18px rgba(10,42,62,.12)}.booking-calendar__day strong{display:block;color:#071d2c;font-size:1rem;margin-bottom:.28rem}.booking-calendar__day--free span{color:#267047;font-size:.75rem;font-weight:750}'
+        '.booking-calendar__day--busy,.booking-calendar__day--high,.booking-calendar__day--full{border-color:#17384d;background:#17384d}.booking-calendar__day--high{background:#102f45}.booking-calendar__day--full{background:#071d2c}.booking-calendar__day--busy strong,.booking-calendar__day--high strong,.booking-calendar__day--full strong,.booking-calendar__count,.booking-calendar__resource,.booking-calendar__time{color:#fff}.booking-calendar__day--today{outline:3px solid #f5b82e;outline-offset:1px}.booking-calendar__count{display:block;font-size:.75rem;font-weight:800;line-height:1.35}.booking-calendar__details{display:grid;gap:.12rem;margin-top:.38rem}.booking-calendar__resource{font-size:.72rem;font-weight:800;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.booking-calendar__time{font-size:.69rem;line-height:1.25;color:#dceaf2}'
+        '@media(max-width:640px){.calendar-section-heading>span{width:40px;height:40px}.calendar-section-heading h2{font-size:1.45rem}.calendar-section-heading p{font-size:.8rem}.booking-calendar{padding:.72rem;border-radius:14px}.booking-calendar__title{align-items:flex-start;flex-direction:column;gap:.45rem}.booking-calendar__title h4{font-size:1.05rem}.booking-calendar__weekdays{display:none}.booking-calendar__grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:.42rem}.booking-calendar__blank{display:none}.booking-calendar__day{min-height:96px;padding:.52rem}.booking-calendar__day strong{font-size:.92rem}.booking-calendar__resource{font-size:.68rem}.booking-calendar__time{font-size:.65rem}}'
+        '</style>'
+        f'<section class="booking-calendar" aria-label="ปฏิทินการใช้งาน {html.escape(calendar_type)}">'
+        f'<div class="booking-calendar__title"><h4>{thai_months[chosen_date.month]} {chosen_date.year + 543} · {html.escape(calendar_type)}</h4><div class="booking-calendar__legend"><span>🟢 ว่าง</span><span class="dark">มีการใช้งาน</span></div></div>'
+        f'<div class="booking-calendar__summary"><span>ทรัพยากร {len(resources)} รายการ</span><span>มีคิว {busy_days} วัน</span><span>ว่างทั้งวัน {days_in_month - busy_days} วัน</span></div>'
+        f'<div class="booking-calendar__weekdays">{weekdays}</div>'
+        f'<div class="booking-calendar__grid">{"".join(calendar_cells)}</div>'
+        '</section>'
     )
+    st.markdown(calendar_markup, unsafe_allow_html=True)
     st.caption("ตัวเลข “ใช้งาน” คือจำนวนรถหรือห้องที่มีรายการอนุมัติในวันนั้น; เวลาที่แสดงคือช่วงเวลาที่ถูกจองแล้ว")
 
 # ==========================================
