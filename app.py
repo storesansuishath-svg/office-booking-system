@@ -73,7 +73,7 @@ APP_LOGO_PATH = APP_DIR / "assets" / "book-smarter-plus-logo.png"
 APP_ICON_PATH = APP_DIR / "assets" / "book-smarter-plus-favicon.png"
 
 CURRENT_BOT_ID = "@119xqhqx"
-APP_VERSION = "1.0.6"
+APP_VERSION = "1.0.7"
 LINE_ADD_FRIEND_URL = f"https://line.me/R/ti/p/{CURRENT_BOT_ID}"
 
 # 🚗 ตั้งค่ารายชื่อรถยนต์ (ใช้ในการจองและประเมิน)
@@ -294,9 +294,44 @@ st.markdown("""
         border-color: rgba(203, 226, 244, 0.18);
     }
 
-    section[data-testid="stSidebar"] [data-testid="stSidebarHeader"] button,
-    section[data-testid="stSidebar"] [data-testid="stSidebarCollapseButton"] button {
+    /* ปุ่มยุบ/เปิด Sidebar ให้เห็นชัดทั้ง PC และมือถือ */
+[data-testid="stSidebarHeader"] button,
+[data-testid="stSidebarCollapseButton"] button,
+[data-testid="stExpandSidebarButton"] button,
+[data-testid="stExpandSidebarButton"],
+button[aria-label*="sidebar" i] {
+        width: 48px !important;
+        min-width: 48px !important;
+        height: 48px !important;
+        min-height: 48px !important;
+        padding: 0 !important;
+        border: 2px solid #4DB8F3 !important;
+        border-radius: 12px !important;
+        background: #071D36 !important;
         color: #FFFFFF !important;
+        box-shadow: 0 6px 16px rgba(0, 0, 0, 0.28) !important;
+        opacity: 1 !important;
+    }
+
+[data-testid="stSidebarHeader"] button:hover,
+[data-testid="stSidebarCollapseButton"] button:hover,
+[data-testid="stExpandSidebarButton"] button:hover,
+[data-testid="stExpandSidebarButton"]:hover,
+button[aria-label*="sidebar" i]:hover {
+        border-color: #8AD8FF !important;
+        background: #0D3B68 !important;
+        transform: scale(1.05);
+    }
+
+[data-testid="stSidebarHeader"] button span,
+[data-testid="stSidebarCollapseButton"] button span,
+[data-testid="stExpandSidebarButton"] button span,
+[data-testid="stExpandSidebarButton"] span,
+button[aria-label*="sidebar" i] span {
+        color: #FFFFFF !important;
+        font-size: 1.65rem !important;
+        font-weight: 900 !important;
+        line-height: 1 !important;
     }
 
     .sidebar-brand-divider {
@@ -425,6 +460,18 @@ st.markdown("""
 
         section[data-testid="stSidebar"] > div {
             width: min(86vw, 300px);
+        }
+
+    [data-testid="stSidebarHeader"] button,
+    [data-testid="stSidebarCollapseButton"] button,
+    [data-testid="stExpandSidebarButton"] button,
+    [data-testid="stExpandSidebarButton"],
+    button[aria-label*="sidebar" i] {
+            width: 52px !important;
+            min-width: 52px !important;
+            height: 52px !important;
+            min-height: 52px !important;
+            border-radius: 13px !important;
         }
 
         section[data-testid="stSidebar"] div[role="radiogroup"][aria-label="เมนูหลัก"] > label {
