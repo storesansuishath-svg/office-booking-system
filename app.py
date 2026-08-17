@@ -72,7 +72,7 @@ COMPANY_LOGO_PATH = APP_DIR / "assets" / "sansuisha-logo.png"
 APP_LOGO_PATH = APP_DIR / "assets" / "book-smarter-plus-logo.png"
 APP_ICON_PATH = APP_DIR / "assets" / "book-smarter-plus-favicon.png"
 
-CURRENT_BOT_ID = "@119xqhqx"
+CURRENT_BOT_ID = "@851jrsed"
 APP_VERSION = "1.0.7"
 LINE_ADD_FRIEND_URL = f"https://line.me/R/ti/p/{CURRENT_BOT_ID}"
 
