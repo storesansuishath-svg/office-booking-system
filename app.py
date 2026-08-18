@@ -72,15 +72,22 @@ COMPANY_LOGO_PATH = APP_DIR / "assets" / "sansuisha-logo.png"
 APP_LOGO_PATH = APP_DIR / "assets" / "book-smarter-plus-logo.png"
 APP_ICON_PATH = APP_DIR / "assets" / "book-smarter-plus-favicon.png"
 
-CURRENT_BOT_ID = "@851jrsed"
-APP_VERSION = "1.0.7"
+CURRENT_BOT_ID = "@119xqhqx"
+APP_VERSION = "1.0.8"
 LINE_ADD_FRIEND_URL = f"https://line.me/R/ti/p/{CURRENT_BOT_ID}"
 
-# 🚗 ตั้งค่ารายชื่อรถยนต์ (ใช้ในการจองและประเมิน)
-SYS_CARS = ["Civic (ตุ้ม)", "Civic (บอล)", "Camry (เนก)", "MG", "MG (เนก)"]
+# 🚗 ตั้งค่ารายชื่อรถยนต์
+SYS_CARS = ["Civic (ตุ้ม)", "Civic (บอล)", "Camry", "Camry (เนก)", "MG", "MG (เนก)"]
+
+# รถขับเอง ไม่ต้องเข้าสู่เงื่อนไขประเมินพนักงานขับรถ
+# ส่วนรถที่ระบุชื่อผู้ขับ (เนก) ยังต้องประเมินตามปกติ
+SELF_DRIVE_CARS = {"Camry", "MG"}
+RATABLE_CARS = [car for car in SYS_CARS if car not in SELF_DRIVE_CARS]
 
 # รถชื่อแตกต่างกันแต่เป็นรถคันเดียวกัน ต้องใช้คิวร่วมกัน
 RESOURCE_CONFLICT_GROUPS = {
+    "Camry": ["Camry", "Camry (เนก)"],
+    "Camry (เนก)": ["Camry", "Camry (เนก)"],
     "MG": ["MG", "MG (เนก)"],
     "MG (เนก)": ["MG", "MG (เนก)"],
 }
@@ -556,7 +563,7 @@ def get_unrated_bookings(name, dept):
     # ยาแรง: ล็อกทั้งแผนก หากมีใครคนใดคนหนึ่งในแผนกนี้ค้างประเมิน จะไม่ให้คนในแผนกนี้จองรถใหม่เด็ดขาด
     try:
         now_iso = thai_wall_now().isoformat()
-        res = supabase.table("bookings").select("*").eq("dept", dept).eq("status", "Approved").in_("resource", SYS_CARS).lt("end_time", now_iso).gte("end_time", "2026-07-01T00:00:00").execute()
+        res = supabase.table("bookings").select("*").eq("dept", dept).eq("status", "Approved").in_("resource", RATABLE_CARS).lt("end_time", now_iso).gte("end_time", "2026-07-01T00:00:00").execute()
         
         matched_unrated = []
         for d in res.data:
@@ -656,7 +663,8 @@ THAI_MONTH_ALIASES = {
 RESOURCE_SEARCH_ALIASES = {
     "Civic (ตุ้ม)": ["civic (ตุ้ม)", "civic ตุ้ม", "ซีวิค ตุ้ม", "ตุ้ม"],
     "Civic (บอล)": ["civic (บอล)", "civic บอล", "ซีวิค บอล", "บอล"],
-    "Camry (เนก)": ["camry (เนก)", "camry เนก", "แคมรี่ เนก", "คัมรี่ เนก", "camry"],
+    "Camry": ["camry", "แคมรี่", "คัมรี่"],
+    "Camry (เนก)": ["camry (เนก)", "camry เนก", "แคมรี่ เนก", "คัมรี่ เนก"],
     "MG (เนก)": ["mg (เนก)", "mg เนก", "เอ็มจี เนก"],
     "MG": ["mg", "เอ็มจี", "mg-ep"],
     "ห้องชั้น 1 (ห้องใหญ่)": ["ห้องชั้น 1", "ห้องใหญ่", "ชั้นหนึ่ง"],
@@ -1585,7 +1593,11 @@ if choice in ["🏠 หน้าแรก", "📝 จองใหม่"]:
     if today_bookings.data:
         for b in today_bookings.data:
             res_name = b['resource']
-            key = "MG" if "MG" in res_name else res_name
+            key = (
+                "MG" if res_name in RESOURCE_CONFLICT_GROUPS["MG"]
+                else "Camry (เนก)" if res_name in RESOURCE_CONFLICT_GROUPS["Camry"]
+                else res_name
+            )
             st_dt = pd.to_datetime(b['start_time']).tz_localize(None)
             en_dt = pd.to_datetime(b['end_time']).tz_localize(None)
             
@@ -1719,7 +1731,7 @@ if choice in ["🏠 หน้าแรก", "📝 จองใหม่"]:
     # +++ โค้ดกระพริบโชว์รายชื่อผู้ค้างประเมินเพื่อกดดัน +++
     try:
         now_iso_alert = thai_wall_now().isoformat()
-        res_alert = supabase.table("bookings").select("requester, dept, is_rated").eq("status", "Approved").in_("resource", SYS_CARS).lt("end_time", now_iso_alert).gte("end_time", "2026-07-01T00:00:00").execute()
+        res_alert = supabase.table("bookings").select("requester, dept, is_rated").eq("status", "Approved").in_("resource", RATABLE_CARS).lt("end_time", now_iso_alert).gte("end_time", "2026-07-01T00:00:00").execute()
         
         if res_alert.data:
             unrated_list = set()
@@ -1815,7 +1827,8 @@ if choice in ["🏠 หน้าแรก", "📝 จองใหม่"]:
                     data = {
                         "resource": res, "requester": name, "phone": phone, "dept": dept, 
                         "start_time": ts.isoformat(), "end_time": te.isoformat(), "purpose": reason, 
-                        "destination": dest, "status": "Pending", "is_rated": False
+                        # รถขับเองไม่ต้องประเมิน ส่วนรถที่มีคนขับและห้องประชุมคงค่าเดิม
+                        "destination": dest, "status": "Pending", "is_rated": res in SELF_DRIVE_CARS
                     }
                     res_insert = supabase.table("bookings").insert(data).execute()
                     
@@ -1940,7 +1953,7 @@ elif choice == "⭐ ประเมินการใช้งาน":
     st.subheader("⭐ ประเมินการปฏิบัติงานพนักงานขับรถ")
     now_iso = thai_wall_now().isoformat()
     try:
-        res = supabase.table("bookings").select("*").eq("status", "Approved").in_("resource", SYS_CARS).lt("end_time", now_iso).gte("end_time", "2026-07-01T00:00:00").execute()
+        res = supabase.table("bookings").select("*").eq("status", "Approved").in_("resource", RATABLE_CARS).lt("end_time", now_iso).gte("end_time", "2026-07-01T00:00:00").execute()
         data = res.data if res.data else []
         unrated = [d for d in data if not d.get("is_rated")]
         
@@ -2123,7 +2136,7 @@ elif choice == "📊 รายงานประจำเดือน":
                 if rep_type in ["ทั้งหมด", "รถยนต์"]:
                     st.markdown("---")
                     st.markdown("#### ⭐ สรุปเปอร์เซ็นต์ความพึงพอใจพนักงานขับรถเฉลี่ย ประจำเดือน")
-                    rated_cars = f_df[(f_df['resource'].isin(SYS_CARS)) & (f_df['is_rated'] == True)]
+                    rated_cars = f_df[(f_df['resource'].isin(RATABLE_CARS)) & (f_df['is_rated'] == True)]
                     
                     if not rated_cars.empty:
                         avg1, avg2, avg3, avg4 = (rated_cars['q1'].mean()/5)*100, (rated_cars['q2'].mean()/5)*100, (rated_cars['q3'].mean()/5)*100, (rated_cars['q4'].mean()/5)*100
