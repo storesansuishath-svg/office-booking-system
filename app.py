@@ -73,7 +73,7 @@ APP_LOGO_PATH = APP_DIR / "assets" / "book-smarter-plus-logo.png"
 APP_ICON_PATH = APP_DIR / "assets" / "book-smarter-plus-favicon.png"
 
 CURRENT_BOT_ID = "@871fsfnr"
-APP_VERSION = "1.0.8"
+APP_VERSION = "1.0.9"
 LINE_ADD_FRIEND_URL = f"https://line.me/R/ti/p/{CURRENT_BOT_ID}"
 
 # 🚗 ตั้งค่ารายชื่อรถยนต์
@@ -90,6 +90,13 @@ RESOURCE_CONFLICT_GROUPS = {
     "Camry (เนก)": ["Camry", "Camry (เนก)"],
     "MG": ["MG", "MG (เนก)"],
     "MG (เนก)": ["MG", "MG (เนก)"],
+}
+
+# Camry (เนก) และ MG (เนก) ใช้พนักงานขับรถคนเดียวกัน
+# จึงต้องตรวจคิวของคนขับร่วมกัน แม้เป็นรถคนละคัน
+DRIVER_CONFLICT_GROUPS = {
+    "Camry (เนก)": ["Camry (เนก)", "MG (เนก)"],
+    "MG (เนก)": ["Camry (เนก)", "MG (เนก)"],
 }
 
 # 🏢 ตั้งค่ารายชื่อห้องประชุม
@@ -545,8 +552,15 @@ def get_conflict_resources(resource):
     resource_name = str(resource).strip()
     return RESOURCE_CONFLICT_GROUPS.get(resource_name, [resource_name])
 
+def get_booking_conflict_resources(resource):
+    """Return physical-car and shared-driver queues relevant to a booking."""
+    resource_name = str(resource).strip()
+    resources = list(get_conflict_resources(resource_name))
+    resources.extend(DRIVER_CONFLICT_GROUPS.get(resource_name, []))
+    return list(dict.fromkeys(resources))
+
 def check_booking_conflict(resource, start_time_iso, end_time_iso, exclude_booking_id=None):
-    conflict_resources = get_conflict_resources(resource)
+    conflict_resources = get_booking_conflict_resources(resource)
     res = supabase.table("bookings").select("*").in_("resource", conflict_resources).in_("status", ["Approved", "Pending"]).execute()
     new_s = datetime.fromisoformat(start_time_iso).replace(tzinfo=None)
     new_e = datetime.fromisoformat(end_time_iso).replace(tzinfo=None)
