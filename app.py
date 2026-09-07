@@ -1,4 +1,6 @@
 import streamlit as st
+import json
+from copy import deepcopy
 import streamlit.components.v1 as components
 import pandas as pd
 from supabase import create_client
@@ -73,7 +75,7 @@ APP_LOGO_PATH = APP_DIR / "assets" / "book-smarter-plus-logo.png"
 APP_ICON_PATH = APP_DIR / "assets" / "book-smarter-plus-favicon.png"
 
 CURRENT_BOT_ID = "@871fsfnr"
-APP_VERSION = "1.0.9"
+APP_VERSION = "1.0.10"
 LINE_ADD_FRIEND_URL = f"https://line.me/R/ti/p/{CURRENT_BOT_ID}"
 
 # 🚗 ตั้งค่ารายชื่อรถยนต์
@@ -572,6 +574,84 @@ def check_booking_conflict(resource, start_time_iso, end_time_iso, exclude_booki
         if new_s < ex_e and new_e > ex_s:
             return True, item['requester'], item['status'], bool(item.get('is_executive_booking', False))
     return False, None, None, False
+
+RATING_TOPICS = {
+    "q1": "พนักงานขับรถมีสภาพร่างกายพร้อมปฏิบัติงาน",
+    "q2": "สภาพรถพร้อมใช้งานมีความสะอาดและปลอดภัย",
+    "q3": "ขับรถด้วยความระมัดระวังและปลอดภัย",
+    "q4": "กิริยาวาจาและพฤติกรรมมีความเหมาะสม",
+}
+
+
+def build_rating_payload(scores, reasons, suggestion, submitted_at):
+    requests = {}
+    for key in RATING_TOPICS:
+        score = scores[key]
+        if type(score) is not int or score not in range(1, 6):
+            raise ValueError("คะแนนต้องอยู่ระหว่าง 1–5")
+        if score > 3:
+            reason = reasons.get(key, "").strip()
+            if not reason:
+                raise ValueError(f"กรุณาระบุเหตุผลคะแนนพิเศษ: {RATING_TOPICS[key]}")
+            requests[key] = {"requested": score, "reason": reason, "status": "pending"}
+    return {
+        "is_rated": True, **{key: min(scores[key], 3) for key in RATING_TOPICS},
+        "suggestion": suggestion,
+        "rating_review": {"version": 2, "submitted_at": submitted_at, "requests": requests},
+    }
+
+
+def decide_rating_request(review, key, approve, reviewer, note, reviewed_at):
+    result = deepcopy(review)
+    request = result.get("requests", {}).get(key)
+    if not request or request.get("status") != "pending":
+        raise ValueError("คำขอนี้ได้รับการพิจารณาแล้ว กรุณาโหลดหน้าใหม่")
+    if request.get("requested") not in (4, 5) or not request.get("reason", "").strip():
+        raise ValueError("ข้อมูลคำขอคะแนนพิเศษไม่ครบถ้วน")
+    if not approve and not note.strip():
+        raise ValueError("กรุณาระบุเหตุผลที่ไม่อนุมัติ")
+    request.update(status="approved" if approve else "rejected", reviewed_by=reviewer,
+                   reviewed_at=reviewed_at, review_note=note.strip())
+    return {key: request["requested"] if approve else 3, "rating_review": result}
+
+
+def render_special_rating_admin():
+    st.subheader("⭐ อนุมัติคะแนนพิเศษ")
+    try:
+        rows = supabase.table("bookings").select("id,resource,requester,end_time,rating_review") \
+            .eq("is_rated", True).not_.is_("rating_review", "null").order("end_time", desc=True).execute().data or []
+        pending = 0
+        for row in rows:
+            review = row.get("rating_review") or {}
+            for key, request in review.get("requests", {}).items():
+                if key not in RATING_TOPICS or request.get("status") != "pending":
+                    continue
+                pending += 1
+                with st.container(border=True):
+                    st.write(f"รายการ #{row['id']} · {row['resource']} · ผู้จอง: {row['requester']}")
+                    st.write(f"สิ้นสุดงาน: {pd.to_datetime(row['end_time'], utc=True).tz_convert(THAILAND_TZ).strftime('%d/%m/%Y %H:%M')}")
+                    st.write(f"{RATING_TOPICS[key]} — ขอ {request['requested']} คะแนน (ปัจจุบัน 3)")
+                    st.text(request.get("reason", ""))
+                    with st.form(f"special_review_{row['id']}_{key}"):
+                        note = st.text_area("หมายเหตุผู้พิจารณา (จำเป็นเมื่อไม่อนุมัติ)")
+                        left, right = st.columns(2)
+                        approve = left.form_submit_button("อนุมัติคะแนนพิเศษ")
+                        reject = right.form_submit_button("ไม่อนุมัติ / คง 3 คะแนน")
+                        if approve or reject:
+                            if not st.session_state.get("admin_user"):
+                                raise ValueError("กรุณาเข้าสู่ระบบ Admin")
+                            payload = decide_rating_request(review, key, approve,
+                                st.session_state["admin_user"], note, datetime.now(THAILAND_TZ).isoformat())
+                            saved = supabase.table("bookings").update(payload).eq("id", row["id"]) \
+                                .eq("rating_review", json.dumps(review, ensure_ascii=False)).execute()
+                            if not saved.data:
+                                raise ValueError("ข้อมูลเปลี่ยนแปลงระหว่างพิจารณา กรุณาโหลดหน้าใหม่")
+                            st.rerun()
+        if not pending:
+            st.info("ไม่มีคะแนนพิเศษรออนุมัติ")
+    except Exception as exc:
+        st.error(f"ตรวจสอบคะแนนพิเศษไม่สำเร็จ: {exc}")
+
 
 def get_unrated_bookings(name, dept):
     # ยาแรง: ล็อกทั้งแผนก หากมีใครคนใดคนหนึ่งในแผนกนี้ค้างประเมิน จะไม่ให้คนในแผนกนี้จองรถใหม่เด็ดขาด
@@ -1987,12 +2067,14 @@ elif choice == "⭐ ประเมินการใช้งาน":
             st.markdown("---")
             st.markdown(f"กำลังประเมินพนักงานขับรถสำหรับรายการ **{selected_booking['resource']}**")
             
-            with st.form("rating_form"):
-                st.write("**หัวข้อประเมิน (1 = ต้องปรับปรุง, 5 = ดีมาก)**")
-                q1 = st.radio("พนักงานขับรถมีสภาพร่างกายพร้อมปฏิบัติงาน", [1, 2, 3, 4, 5], index=4, horizontal=True)
-                q2 = st.radio("สภาพรถพร้อมใช้งานมีความสะอาดและปลอดภัย", [1, 2, 3, 4, 5], index=4, horizontal=True)
-                q3 = st.radio("ขับรถด้วยความระมัดระวังและปลอดภัย", [1, 2, 3, 4, 5], index=4, horizontal=True)
-                q4 = st.radio("กิริยาวาจาและพฤติกรรมมีความเหมาะสม", [1, 2, 3, 4, 5], index=4, horizontal=True)
+            with st.form(f"rating_form_{selected_booking['id']}"):
+                st.write("**1 = ต้องปรับปรุง · 2 = พอใช้ · 3 = ดีตามมาตรฐาน**")
+                st.info("4–5 เป็นคะแนนพิเศษ ต้องระบุเหตุผลรายหัวข้อและรอ Admin อนุมัติ ระหว่างรอใช้ 3 คะแนน โดยถือว่าประเมินเสร็จแล้วทันทีที่ส่งสำเร็จ")
+                scores, reasons = {}, {}
+                for key, topic in RATING_TOPICS.items():
+                    scores[key] = st.radio(topic, [1, 2, 3, 4, 5], index=2, horizontal=True)
+                    reasons[key] = st.text_area(f"เหตุผลคะแนน 4–5: {topic}",
+                        placeholder="กรอกเมื่อเลือก 4 หรือ 5: เกิดเหตุการณ์ใด ทำอะไรเกินมาตรฐาน และผลที่เกิดขึ้น")
                 suggestion = st.text_area("ข้อเสนอแนะอื่นๆ")
                 
                 st.warning("⚠️ โปรดตรวจสอบข้อมูลให้ครบถ้วนก่อนส่ง (ไม่สามารถแก้ไขข้อมูลได้ภายหลังการให้คะแนน)")
@@ -2002,9 +2084,11 @@ elif choice == "⭐ ประเมินการใช้งาน":
                     if not confirm:
                         st.error("❌ กรุณากดยืนยัน (ติ๊กถูกที่ช่อง แน่ใจ / ยืนยันข้อมูล) ก่อนส่งผลประเมินครับ")
                     else:
-                        supabase.table("bookings").update({
-                            "is_rated": True, "q1": q1, "q2": q2, "q3": q3, "q4": q4, "suggestion": suggestion
-                        }).eq("id", selected_booking['id']).execute()
+                        payload = build_rating_payload(scores, reasons, suggestion, datetime.now(THAILAND_TZ).isoformat())
+                        saved = supabase.table("bookings").update(payload).eq("id", selected_booking['id']) \
+                            .eq("status", "Approved").or_("is_rated.eq.false,is_rated.is.null").execute()
+                        if not saved.data:
+                            raise ValueError("รายการนี้ถูกประเมินแล้วหรือมีการเปลี่ยนแปลง กรุณาโหลดหน้าใหม่")
                         
                         st.success("✅ บันทึกผลการประเมินเรียบร้อยแล้ว ขอบคุณที่ใช้บริการครับ!")
                         time.sleep(2)
@@ -2016,6 +2100,8 @@ elif choice == "⭐ ประเมินการใช้งาน":
 # ==========================================
 elif choice == "🔑 Admin (อนุมัติ)":
     if check_admin_login():
+        render_special_rating_admin()
+        st.markdown("---")
         st.subheader("🔑 ระบบจัดการคำขอ (อนุมัติการจอง)")
         try: 
             res = supabase.table("bookings").select("*").eq("status", "Pending").order("id").execute()
@@ -2146,11 +2232,24 @@ elif choice == "📊 รายงานประจำเดือน":
                 out_df['ขับปลอดภัย'] = f_df.get('q3', '-')
                 out_df['มารยาท'] = f_df.get('q4', '-')
                 out_df['ข้อเสนอแนะ'] = f_df.get('suggestion', '-')
+                reviews = f_df.get('rating_review', pd.Series(None, index=f_df.index, dtype=object))
+                out_df['เกณฑ์คะแนน'] = reviews.apply(lambda value: 'ใหม่: 3 = ตามมาตรฐาน' if isinstance(value, dict) and value.get('version') == 2 else 'เดิม: 1–5')
+                out_df['รายละเอียดคะแนนพิเศษ'] = reviews.apply(lambda value: json.dumps(value, ensure_ascii=False) if isinstance(value, dict) else '')
                 
                 if rep_type in ["ทั้งหมด", "รถยนต์"]:
                     st.markdown("---")
-                    st.markdown("#### ⭐ สรุปเปอร์เซ็นต์ความพึงพอใจพนักงานขับรถเฉลี่ย ประจำเดือน")
+                    st.markdown("#### ⭐ สรุปผลประเมินพนักงานขับรถ ประจำเดือน")
                     rated_cars = f_df[(f_df['resource'].isin(RATABLE_CARS)) & (f_df['is_rated'] == True)]
+                    new_mask = rated_cars.get('rating_review', pd.Series(None, index=rated_cars.index, dtype=object)).apply(
+                        lambda value: isinstance(value, dict) and value.get('version') == 2)
+                    new_ratings = rated_cars[new_mask]
+                    rated_cars = rated_cars[~new_mask]
+                    if not new_ratings.empty:
+                        st.write("เกณฑ์ใหม่: 3 = ดีตามมาตรฐาน, 4–5 = คะแนนพิเศษที่อนุมัติแล้ว (ไม่นำไปรวมกับเกณฑ์เดิม)")
+                        st.metric("คะแนนเฉลี่ยเกณฑ์ใหม่", f"{new_ratings[list(RATING_TOPICS)].mean().mean():.2f} / 5")
+                        for column, (key, topic) in zip(st.columns(4), RATING_TOPICS.items()):
+                            column.metric(topic, f"{new_ratings[key].mean():.2f}")
+                    st.caption("เปอร์เซ็นต์ด้านล่างคำนวณเฉพาะผลประเมินเกณฑ์เดิม")
                     
                     if not rated_cars.empty:
                         avg1, avg2, avg3, avg4 = (rated_cars['q1'].mean()/5)*100, (rated_cars['q2'].mean()/5)*100, (rated_cars['q3'].mean()/5)*100, (rated_cars['q4'].mean()/5)*100
@@ -2161,7 +2260,7 @@ elif choice == "📊 รายงานประจำเดือน":
                         sc2.metric("2. สภาพรถ/ความสะอาด", f"{avg2:.2f}%")
                         sc3.metric("3. การขับรถปลอดภัย", f"{avg3:.2f}%")
                         sc4.metric("4. มารยาท", f"{avg4:.2f}%")
-                    else: st.info("ยังไม่มีข้อมูลการประเมินในเดือนที่เลือก")
+                    else: st.info("ไม่มีผลประเมินเกณฑ์เดิมในเดือนที่เลือก")
             
             st.markdown("---")
             st.dataframe(out_df, width="stretch")
