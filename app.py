@@ -15,6 +15,9 @@ import calendar as calendar_module
 import html
 import re
 import os
+import hashlib
+import secrets
+from urllib.parse import quote
 from zoneinfo import ZoneInfo
 
 # ==========================================
@@ -75,8 +78,16 @@ APP_LOGO_PATH = APP_DIR / "assets" / "book-smarter-plus-logo.png"
 APP_ICON_PATH = APP_DIR / "assets" / "book-smarter-plus-favicon.png"
 
 CURRENT_BOT_ID = "@871fsfnr"
-APP_VERSION = "1.0.10"
+APP_VERSION = "1.0.11"
 LINE_ADD_FRIEND_URL = f"https://line.me/R/ti/p/{CURRENT_BOT_ID}"
+PUBLIC_WEB_URL = get_runtime_setting(
+    "PUBLIC_WEB_URL",
+    "https://office-booking-system-hll8ub77ixfgmj2s4slbu4.streamlit.app",
+).rstrip("/")
+EXECUTIVE_EMAIL_SCRIPT_URL = get_runtime_setting("EXECUTIVE_EMAIL_SCRIPT_URL", "")
+EXECUTIVE_EMAIL_SHARED_TOKEN = get_runtime_setting("EXECUTIVE_EMAIL_SHARED_TOKEN", "")
+EXECUTIVE_RATING_LINK_DAYS = 7
+EXECUTIVE_RATING_START_CUTOFF = datetime(2026, 10, 1, 0, 0)
 
 # 🚗 ตั้งค่ารายชื่อรถยนต์
 SYS_CARS = ["Civic (ตุ้ม)", "Civic (บอล)", "Camry", "Camry (เนก)", "MG", "MG (เนก)"]
@@ -582,6 +593,106 @@ RATING_TOPICS = {
     "q4": "กิริยาวาจาและพฤติกรรมมีความเหมาะสม",
 }
 
+EXECUTIVE_RATING_I18N = {
+    "TH": {
+        "title": "ประเมินการปฏิบัติงานพนักงานขับรถ",
+        "intro": "ลิงก์นี้ใช้ประเมินได้หนึ่งครั้ง และไม่ต้องเข้าสู่ระบบ",
+        "booking": "รายการเดินทาง",
+        "scale": "1 = ต้องปรับปรุง · 2 = พอใช้ · 3 = ดีตามมาตรฐาน",
+        "special": "4–5 เป็นคะแนนพิเศษ กรุณาระบุเหตุผลรายหัวข้อและรอ Admin อนุมัติ",
+        "reason": "เหตุผลสำหรับคะแนน 4–5",
+        "suggestion": "ข้อเสนอแนะอื่นๆ",
+        "confirm": "ยืนยันว่าตรวจสอบข้อมูลแล้ว",
+        "submit": "ส่งผลการประเมิน",
+        "required_reason": "กรุณาระบุเหตุผลสำหรับคะแนน 4–5 ให้ครบทุกหัวข้อ",
+        "required_confirm": "กรุณายืนยันข้อมูลก่อนส่ง",
+        "success": "บันทึกผลการประเมินเรียบร้อยแล้ว ขอบคุณครับ",
+        "topics": RATING_TOPICS,
+    },
+    "JP": {
+        "title": "運転手の業務評価",
+        "intro": "このリンクは1回のみ使用でき、ログインは不要です。",
+        "booking": "利用情報",
+        "scale": "1 = 改善が必要 · 2 = 普通 · 3 = 標準を満たす",
+        "special": "4～5は特別評価です。各項目に理由を入力し、管理者の承認が必要です。",
+        "reason": "4～5点を選んだ理由",
+        "suggestion": "その他のご意見",
+        "confirm": "入力内容を確認しました",
+        "submit": "評価を送信",
+        "required_reason": "4～5点を選んだすべての項目に理由を入力してください。",
+        "required_confirm": "送信前に確認欄を選択してください。",
+        "success": "評価を受け付けました。ありがとうございました。",
+        "topics": {
+            "q1": "運転手は業務に適した健康状態でしたか",
+            "q2": "車両は清潔で、安全に使用できる状態でしたか",
+            "q3": "安全に配慮した慎重な運転でしたか",
+            "q4": "言葉遣い・態度・行動は適切でしたか",
+        },
+    },
+    "EN": {
+        "title": "Driver performance evaluation",
+        "intro": "This link can be used once and does not require login.",
+        "booking": "Trip details",
+        "scale": "1 = Needs improvement · 2 = Fair · 3 = Meets standard",
+        "special": "Scores 4–5 require a reason for each topic and Admin approval.",
+        "reason": "Reason for a score of 4–5",
+        "suggestion": "Other suggestions",
+        "confirm": "I have reviewed the information",
+        "submit": "Submit evaluation",
+        "required_reason": "Please provide a reason for every topic scored 4–5.",
+        "required_confirm": "Please confirm the information before submitting.",
+        "success": "Your evaluation has been recorded. Thank you.",
+        "topics": {
+            "q1": "Was the driver physically fit and ready for duty?",
+            "q2": "Was the vehicle clean, safe, and ready for use?",
+            "q3": "Did the driver drive carefully and safely?",
+            "q4": "Were the driver's communication, manners, and conduct appropriate?",
+        },
+    },
+}
+
+
+def is_valid_email(value):
+    return bool(re.fullmatch(r"[^\s@]+@[^\s@]+\.[^\s@]+", (value or "").strip()))
+
+
+def hash_executive_rating_token(token):
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+
+def make_executive_rating_invite(end_time):
+    raw_token = secrets.token_urlsafe(32)
+    end_dt = booking_wall_datetime(end_time) if not isinstance(end_time, datetime) else end_time
+    expires_at = end_dt.replace(tzinfo=THAILAND_TZ) + timedelta(days=EXECUTIVE_RATING_LINK_DAYS)
+    rating_url = f"{PUBLIC_WEB_URL}/?executive_rating_token={quote(raw_token)}"
+    return raw_token, hash_executive_rating_token(raw_token), expires_at.isoformat(), rating_url
+
+
+def schedule_executive_rating_email(booking_id, recipient_email, end_time, rating_url, action="upsert"):
+    """Ask the private Apps Script scheduler to create/update/cancel one email job."""
+    if not EXECUTIVE_EMAIL_SCRIPT_URL or not EXECUTIVE_EMAIL_SHARED_TOKEN:
+        return False, "ยังไม่ได้ตั้งค่า EXECUTIVE_EMAIL_SCRIPT_URL และ EXECUTIVE_EMAIL_SHARED_TOKEN"
+    try:
+        response = requests.post(
+            EXECUTIVE_EMAIL_SCRIPT_URL,
+            json={
+                "sharedToken": EXECUTIVE_EMAIL_SHARED_TOKEN,
+                "action": action,
+                "bookingId": str(booking_id),
+                "recipient": recipient_email,
+                "sendAt": end_time.replace(tzinfo=THAILAND_TZ).isoformat() if isinstance(end_time, datetime) else str(end_time),
+                "ratingUrl": rating_url,
+            },
+            timeout=15,
+        )
+        response.raise_for_status()
+        result = response.json()
+        if not result.get("ok"):
+            raise ValueError(result.get("error") or "Apps Script ปฏิเสธคำขอ")
+        return True, "ตั้งเวลาส่งอีเมลแล้ว"
+    except Exception as exc:
+        return False, str(exc)
+
 
 def build_rating_payload(scores, reasons, suggestion, submitted_at):
     requests = {}
@@ -599,6 +710,96 @@ def build_rating_payload(scores, reasons, suggestion, submitted_at):
         "suggestion": suggestion,
         "rating_review": {"version": 2, "submitted_at": submitted_at, "requests": requests},
     }
+
+
+def render_public_executive_rating(raw_token):
+    """Render a one-time executive rating page before any login/navigation UI."""
+    token_hash = hash_executive_rating_token(raw_token)
+    try:
+        rows = (
+            supabase.table("bookings")
+            .select("*")
+            .eq("executive_rating_token_hash", token_hash)
+            .eq("is_executive_booking", True)
+            .limit(1)
+            .execute().data or []
+        )
+    except Exception:
+        st.error("ไม่สามารถเปิดแบบประเมินได้ กรุณาติดต่อผู้ดูแลระบบ")
+        return
+
+    if not rows:
+        st.warning("ลิงก์ไม่ถูกต้อง ถูกใช้งานแล้ว หรือหมดอายุ")
+        return
+
+    booking = rows[0]
+    now = datetime.now(THAILAND_TZ)
+    expires_at = pd.to_datetime(booking.get("executive_rating_expires_at"), errors="coerce", utc=True)
+    if pd.isna(expires_at) or now > expires_at.to_pydatetime().astimezone(THAILAND_TZ):
+        st.warning("ลิงก์ประเมินหมดอายุแล้ว กรุณาติดต่อผู้ดูแลระบบ")
+        return
+    end_dt = booking_wall_datetime(booking.get("end_time"))
+    if not end_dt or thai_wall_now() < end_dt:
+        st.info("แบบประเมินจะเปิดให้ส่งได้หลังสิ้นสุดการเดินทาง")
+        return
+    if booking.get("is_rated") or booking.get("executive_rating_invite_status") == "completed":
+        st.success("รายการนี้ได้รับการประเมินเรียบร้อยแล้ว")
+        return
+
+    st.markdown('<div class="main-title">Executive Driver Evaluation</div>', unsafe_allow_html=True)
+    language = st.segmented_control(
+        "Language / 言語 / ภาษา",
+        ["TH", "JP", "EN"],
+        default="TH",
+        key="executive_rating_language",
+    ) or "TH"
+    copy = EXECUTIVE_RATING_I18N[language]
+    st.subheader(copy["title"])
+    st.caption(copy["intro"])
+    with st.container(border=True):
+        st.write(f"**{copy['booking']}** · {booking.get('resource', '-')} · {end_dt.strftime('%d/%m/%Y %H:%M')}")
+    with st.form(f"public_executive_rating_{booking['id']}_{language}"):
+        st.write(f"**{copy['scale']}**")
+        st.info(copy["special"])
+        scores, reasons = {}, {}
+        for key, topic in copy["topics"].items():
+            scores[key] = st.radio(topic, [1, 2, 3, 4, 5], index=2, horizontal=True, key=f"public_{language}_{key}")
+            reasons[key] = st.text_area(
+                f"{copy['reason']}: {topic}",
+                key=f"public_{language}_{key}_reason",
+            )
+        suggestion = st.text_area(copy["suggestion"], key=f"public_{language}_suggestion")
+        confirm = st.checkbox(copy["confirm"], key=f"public_{language}_confirm")
+        submitted = st.form_submit_button(copy["submit"], type="primary", width="stretch")
+
+    if submitted:
+        if not confirm:
+            st.error(copy["required_confirm"])
+            return
+        if any(scores[key] > 3 and not reasons[key].strip() for key in RATING_TOPICS):
+            st.error(copy["required_reason"])
+            return
+        try:
+            submitted_at = datetime.now(THAILAND_TZ).isoformat()
+            payload = build_rating_payload(scores, reasons, suggestion, submitted_at)
+            payload["rating_review"].update({"source": "executive_email", "language": language})
+            payload.update({
+                "executive_rating_invite_status": "completed",
+                "executive_rating_completed_at": submitted_at,
+                "executive_rating_token_hash": None,
+            })
+            saved = (
+                supabase.table("bookings").update(payload)
+                .eq("id", booking["id"])
+                .eq("executive_rating_token_hash", token_hash)
+                .or_("is_rated.eq.false,is_rated.is.null")
+                .execute()
+            )
+            if not saved.data:
+                raise ValueError("already submitted")
+            st.success(copy["success"])
+        except Exception:
+            st.error("ไม่สามารถบันทึกผลได้ หรือรายการนี้ถูกประเมินแล้ว กรุณาติดต่อผู้ดูแลระบบ")
 
 
 def decide_rating_request(review, key, approve, reviewer, note, reviewed_at):
@@ -657,7 +858,7 @@ def get_unrated_bookings(name, dept):
     # ยาแรง: ล็อกทั้งแผนก หากมีใครคนใดคนหนึ่งในแผนกนี้ค้างประเมิน จะไม่ให้คนในแผนกนี้จองรถใหม่เด็ดขาด
     try:
         now_iso = thai_wall_now().isoformat()
-        res = supabase.table("bookings").select("*").eq("dept", dept).eq("status", "Approved").in_("resource", RATABLE_CARS).lt("end_time", now_iso).gte("end_time", "2026-07-01T00:00:00").execute()
+        res = supabase.table("bookings").select("*").eq("dept", dept).eq("status", "Approved").in_("resource", RATABLE_CARS).or_("is_executive_booking.eq.false,is_executive_booking.is.null").lt("end_time", now_iso).gte("end_time", "2026-07-01T00:00:00").execute()
         
         matched_unrated = []
         for d in res.data:
@@ -1365,6 +1566,11 @@ def render_management_schedule():
 
     recorder = st.session_state.get("admin_user", "Admin")
     st.caption("บันทึกเฉพาะรถยนต์ · อนุมัติทันที · ไม่มีการแจ้งเตือน LINE · รายละเอียดหน้านี้เห็นได้เฉพาะ Admin")
+    st.info("งานที่เริ่มตั้งแต่ 1 ตุลาคม 2026 และใช้รถพร้อมคนขับ ระบบจะส่งลิงก์ประเมินทางอีเมลหลังจบงาน")
+    executive_notice = st.session_state.pop("executive_notice", None)
+    if executive_notice:
+        notice_level, notice_text = executive_notice
+        getattr(st, notice_level)(notice_text)
 
     with st.form("executive_booking_form", clear_on_submit=True):
         left, right = st.columns(2)
@@ -1373,6 +1579,12 @@ def render_management_schedule():
             st.text_input("ผู้บันทึก", value=recorder, disabled=True)
             destination = st.text_input("สถานที่ปลายทาง / Google Map", key="executive_destination")
             purpose = st.text_area("วัตถุประสงค์การใช้งาน", key="executive_purpose")
+            executive_email = st.text_input(
+                "อีเมลผู้รับแบบประเมิน",
+                placeholder="name@example.com",
+                key="executive_rating_email",
+                help="จำเป็นสำหรับรถพร้อมคนขับและงานที่เริ่มตั้งแต่ 1 ตุลาคม 2026",
+            )
         with right:
             today = thai_wall_now().date()
             start_date = st.date_input("วันที่เริ่ม", min_value=today, key="executive_start_date")
@@ -1392,6 +1604,8 @@ def render_management_schedule():
                 st.error("ไม่สามารถบันทึกเวลาย้อนหลังได้")
             elif start_time >= end_time:
                 st.error("เวลาเริ่มต้องมาก่อนเวลาสิ้นสุด")
+            elif start_time >= EXECUTIVE_RATING_START_CUTOFF and resource in RATABLE_CARS and not is_valid_email(executive_email):
+                st.error("กรุณากรอกอีเมลผู้รับแบบประเมินให้ถูกต้อง")
             else:
                 is_conflict, conflict_user, conflict_status, is_executive_conflict = check_booking_conflict(
                     resource, start_time.isoformat(), end_time.isoformat()
@@ -1403,7 +1617,8 @@ def render_management_schedule():
                     st.error(f"บันทึกไม่ได้: {resource} {detail} ในช่วงเวลานี้")
                 else:
                     try:
-                        supabase.table("bookings").insert({
+                        needs_email_rating = start_time >= EXECUTIVE_RATING_START_CUTOFF and resource in RATABLE_CARS
+                        inserted = supabase.table("bookings").insert({
                             "resource": resource,
                             "requester": recorder,
                             "phone": "-",
@@ -1413,12 +1628,36 @@ def render_management_schedule():
                             "purpose": purpose,
                             "destination": destination,
                             "status": "Approved",
-                            "is_rated": True,
+                            "is_rated": not needs_email_rating,
                             "is_executive_booking": True,
+                            "executive_rating_email": executive_email.strip() if needs_email_rating else None,
+                            "executive_rating_invite_status": "pre_cutoff" if start_time < EXECUTIVE_RATING_START_CUTOFF else (
+                                "not_required" if resource not in RATABLE_CARS else "preparing"
+                            ),
                             "last_updated_by": recorder,
                             "last_updated_at": datetime.now(THAILAND_TZ).isoformat(),
                         }).execute()
-                        st.success("บันทึกตารางผู้บริหารเรียบร้อย รถถูกกันคิวแล้ว")
+                        booking_id = inserted.data[0]["id"]
+                        if needs_email_rating:
+                            _, token_hash, expires_at, rating_url = make_executive_rating_invite(end_time)
+                            invite_fields = {
+                                "executive_rating_token_hash": token_hash,
+                                "executive_rating_expires_at": expires_at,
+                                "executive_rating_invite_status": "preparing",
+                            }
+                            supabase.table("bookings").update(invite_fields).eq("id", booking_id).execute()
+                            scheduled, schedule_message = schedule_executive_rating_email(
+                                booking_id, executive_email.strip(), end_time, rating_url
+                            )
+                            supabase.table("bookings").update({
+                                "executive_rating_invite_status": "scheduled" if scheduled else "schedule_failed"
+                            }).eq("id", booking_id).execute()
+                            if scheduled:
+                                st.session_state["executive_notice"] = ("success", "บันทึกรายการและตั้งเวลาส่งอีเมลประเมินเรียบร้อย")
+                            else:
+                                st.session_state["executive_notice"] = ("warning", f"บันทึกรายการแล้ว แต่ยังตั้งเวลาส่งอีเมลไม่ได้: {schedule_message}")
+                        else:
+                            st.session_state["executive_notice"] = ("success", "บันทึกตารางผู้บริหารเรียบร้อย รถถูกกันคิวแล้ว")
                         st.rerun()
                     except Exception as exc:
                         st.error(f"บันทึกไม่สำเร็จ: {exc}")
@@ -1444,10 +1683,22 @@ def render_management_schedule():
 
     executive_df["เวลาเริ่ม"] = pd.to_datetime(executive_df["start_time"], errors="coerce").dt.strftime("%d/%m/%Y %H:%M")
     executive_df["เวลาสิ้นสุด"] = pd.to_datetime(executive_df["end_time"], errors="coerce").dt.strftime("%d/%m/%Y %H:%M")
+    if "executive_rating_email" not in executive_df.columns:
+        executive_df["executive_rating_email"] = None
+    if "executive_rating_invite_status" not in executive_df.columns:
+        executive_df["executive_rating_invite_status"] = None
+    executive_df["executive_rating_invite_status"] = executive_df["executive_rating_invite_status"].replace({
+        "scheduled": "ตั้งเวลาส่งแล้ว",
+        "schedule_failed": "ตั้งเวลาส่งไม่สำเร็จ",
+        "completed": "ประเมินแล้ว",
+        "pre_cutoff": "ก่อนวันเริ่มใช้งาน",
+        "not_required": "ไม่ต้องประเมิน",
+        "preparing": "กำลังตั้งเวลา",
+    })
     executive_df["แก้ไขล่าสุด"] = executive_df.get("last_updated_at").map(format_thai_audit_datetime)
     executive_df["บันทึก/แก้ไขล่าสุดโดย"] = executive_df.get("last_updated_by", executive_df["requester"]).fillna(executive_df["requester"])
-    display = executive_df[["id", "resource", "เวลาเริ่ม", "เวลาสิ้นสุด", "requester", "destination", "purpose", "บันทึก/แก้ไขล่าสุดโดย", "แก้ไขล่าสุด"]].copy()
-    display.columns = ["รหัสรายการ", "รถยนต์", "เวลาเริ่ม", "เวลาสิ้นสุด", "ผู้บันทึก", "ปลายทาง", "วัตถุประสงค์", "บันทึก/แก้ไขล่าสุดโดย", "เวลาแก้ไขล่าสุด"]
+    display = executive_df[["id", "resource", "เวลาเริ่ม", "เวลาสิ้นสุด", "requester", "destination", "purpose", "executive_rating_email", "executive_rating_invite_status", "บันทึก/แก้ไขล่าสุดโดย", "แก้ไขล่าสุด"]].copy()
+    display.columns = ["รหัสรายการ", "รถยนต์", "เวลาเริ่ม", "เวลาสิ้นสุด", "ผู้บันทึก", "ปลายทาง", "วัตถุประสงค์", "อีเมลประเมิน", "สถานะอีเมล", "บันทึก/แก้ไขล่าสุดโดย", "เวลาแก้ไขล่าสุด"]
     st.dataframe(display, hide_index=True, width="stretch")
 
     st.markdown("### แก้ไขรายการ")
@@ -1469,12 +1720,29 @@ def render_management_schedule():
     # clearly labelled edit button per record directly below the report.
     st.caption("เลือกรายการจากรายละเอียดด้านล่าง หรือกดปุ่ม ✏️ แก้ไข ของรายการนั้น")
     for item in executive_df.to_dict("records"):
-        row_info, row_action = st.columns([8, 2])
+        row_info, row_action, retry_action = st.columns([7, 1.5, 1.5])
         row_info.markdown(f"**{item['label_for_edit']}**")
         if row_action.button("✏️ แก้ไข", key=f"open_executive_edit_{item['id']}", width="stretch"):
             st.session_state["executive_edit_id"] = item["id"]
             st.session_state["executive_edit_selector"] = item["id"]
             st.rerun()
+        if item.get("executive_rating_invite_status") == "ตั้งเวลาส่งไม่สำเร็จ":
+            if retry_action.button("📧 ส่งซ้ำ", key=f"retry_executive_email_{item['id']}", width="stretch"):
+                retry_end = booking_wall_datetime(item["end_time"])
+                _, retry_hash, retry_expires, retry_url = make_executive_rating_invite(retry_end)
+                scheduled, retry_message = schedule_executive_rating_email(
+                    item["id"], item.get("executive_rating_email", ""), retry_end, retry_url
+                )
+                supabase.table("bookings").update({
+                    "executive_rating_token_hash": retry_hash,
+                    "executive_rating_expires_at": retry_expires,
+                    "executive_rating_invite_status": "scheduled" if scheduled else "schedule_failed",
+                }).eq("id", item["id"]).execute()
+                if scheduled:
+                    st.session_state["executive_notice"] = ("success", "ตั้งเวลาส่งอีเมลใหม่เรียบร้อย")
+                    st.rerun()
+                else:
+                    st.error(f"ยังส่งซ้ำไม่ได้: {retry_message}")
 
     selected_id = st.selectbox(
         "รายการที่กำลังแก้ไข",
@@ -1494,6 +1762,12 @@ def render_management_schedule():
             edit_resource = st.selectbox("รถยนต์", SYS_CARS, index=car_index, key=f"{edit_key}_resource")
             edit_destination = st.text_input("สถานที่ปลายทาง / Google Map", str(record.get("destination", "")), key=f"{edit_key}_destination")
             edit_purpose = st.text_area("วัตถุประสงค์การใช้งาน", str(record.get("purpose", "")), key=f"{edit_key}_purpose")
+            previous_email = record.get("executive_rating_email")
+            edit_email = st.text_input(
+                "อีเมลผู้รับแบบประเมิน",
+                "" if pd.isna(previous_email) else str(previous_email),
+                key=f"{edit_key}_rating_email",
+            )
         with edit_right:
             old_start = booking_wall_datetime(record["start_time"])
             old_end = booking_wall_datetime(record["end_time"])
@@ -1509,18 +1783,51 @@ def render_management_schedule():
             updated_end = datetime.combine(edit_end_date, datetime.strptime(format_time_string(edit_end_raw), "%H:%M").time())
             if updated_start >= updated_end:
                 raise ValueError("เวลาเริ่มต้องมาก่อนเวลาสิ้นสุด")
+            needs_email_rating = updated_start >= EXECUTIVE_RATING_START_CUTOFF and edit_resource in RATABLE_CARS
+            if needs_email_rating and not is_valid_email(edit_email):
+                raise ValueError("กรุณากรอกอีเมลผู้รับแบบประเมินให้ถูกต้อง")
             is_conflict, _, _, _ = check_booking_conflict(
                 edit_resource, updated_start.isoformat(), updated_end.isoformat(), exclude_booking_id=record["id"]
             )
             if is_conflict:
                 st.error("แก้ไขไม่ได้: รถคันนี้มีคิวชนในช่วงเวลาที่เลือก")
             else:
-                supabase.table("bookings").update({
+                update_fields = {
                     "resource": edit_resource, "destination": edit_destination, "purpose": edit_purpose,
                     "start_time": updated_start.isoformat(), "end_time": updated_end.isoformat(),
+                    "executive_rating_email": edit_email.strip() if needs_email_rating else None,
+                    "is_rated": not needs_email_rating,
                     "last_updated_by": recorder, "last_updated_at": datetime.now(THAILAND_TZ).isoformat(),
-                }).eq("id", record["id"]).execute()
-                st.success("แก้ไขรายการเรียบร้อย")
+                }
+                if needs_email_rating:
+                    _, token_hash, expires_at, rating_url = make_executive_rating_invite(updated_end)
+                    update_fields.update({
+                        "executive_rating_token_hash": token_hash,
+                        "executive_rating_expires_at": expires_at,
+                        "executive_rating_invite_status": "preparing",
+                        "executive_rating_completed_at": None,
+                    })
+                    supabase.table("bookings").update(update_fields).eq("id", record["id"]).execute()
+                    scheduled, schedule_message = schedule_executive_rating_email(
+                        record["id"], edit_email.strip(), updated_end, rating_url
+                    )
+                    supabase.table("bookings").update({
+                        "executive_rating_invite_status": "scheduled" if scheduled else "schedule_failed"
+                    }).eq("id", record["id"]).execute()
+                    if scheduled:
+                        st.session_state["executive_notice"] = ("success", "แก้ไขรายการและตั้งเวลาส่งอีเมลใหม่เรียบร้อย")
+                    else:
+                        st.session_state["executive_notice"] = ("warning", f"แก้ไขรายการแล้ว แต่ตั้งเวลาส่งอีเมลไม่ได้: {schedule_message}")
+                else:
+                    update_fields.update({
+                        "executive_rating_token_hash": None,
+                        "executive_rating_expires_at": None,
+                        "executive_rating_invite_status": "pre_cutoff" if updated_start < EXECUTIVE_RATING_START_CUTOFF else "not_required",
+                        "executive_rating_completed_at": None,
+                    })
+                    supabase.table("bookings").update(update_fields).eq("id", record["id"]).execute()
+                    schedule_executive_rating_email(record["id"], "", updated_end, "", action="cancel")
+                    st.session_state["executive_notice"] = ("success", "แก้ไขรายการเรียบร้อย")
                 st.rerun()
         except ValueError as exc:
             st.error(str(exc))
@@ -1583,6 +1890,11 @@ def check_admin_login():
 # ==========================================
 # 6. SIDEBAR & NAVIGATION
 # ==========================================
+public_executive_rating_token = st.query_params.get("executive_rating_token", "")
+if public_executive_rating_token:
+    render_public_executive_rating(public_executive_rating_token)
+    st.stop()
+
 # Retain only the latest 45 days. Caching limits cleanup to once per day per
 # running Streamlit instance instead of once per widget interaction/rerun.
 auto_delete_old_bookings()
@@ -2047,7 +2359,7 @@ elif choice == "⭐ ประเมินการใช้งาน":
     st.subheader("⭐ ประเมินการปฏิบัติงานพนักงานขับรถ")
     now_iso = thai_wall_now().isoformat()
     try:
-        res = supabase.table("bookings").select("*").eq("status", "Approved").in_("resource", RATABLE_CARS).lt("end_time", now_iso).gte("end_time", "2026-07-01T00:00:00").execute()
+        res = supabase.table("bookings").select("*").eq("status", "Approved").in_("resource", RATABLE_CARS).or_("is_executive_booking.eq.false,is_executive_booking.is.null").lt("end_time", now_iso).gte("end_time", "2026-07-01T00:00:00").execute()
         data = res.data if res.data else []
         unrated = [d for d in data if not d.get("is_rated")]
         
