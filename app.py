@@ -17,6 +17,8 @@ import re
 import os
 import hashlib
 import secrets
+import base64
+import qrcode
 from urllib.parse import quote
 from zoneinfo import ZoneInfo
 
@@ -78,7 +80,7 @@ APP_LOGO_PATH = APP_DIR / "assets" / "book-smarter-plus-logo.png"
 APP_ICON_PATH = APP_DIR / "assets" / "book-smarter-plus-favicon.png"
 
 CURRENT_BOT_ID = "@871fsfnr"
-APP_VERSION = "1.0.11"
+APP_VERSION = "1.0.12"
 LINE_ADD_FRIEND_URL = f"https://line.me/R/ti/p/{CURRENT_BOT_ID}"
 PUBLIC_WEB_URL = get_runtime_setting(
     "PUBLIC_WEB_URL",
@@ -147,6 +149,21 @@ def get_supabase_client():
     )
 
 supabase = get_supabase_client()
+
+
+@st.cache_resource(show_spinner=False)
+def get_executive_batch_client():
+    """Keep elevated access limited to the executive batch table on the server."""
+    return create_client(
+        SUPABASE_URL,
+        get_runtime_setting("SUPABASE_SERVICE_ROLE_KEY", required=True),
+        options=ClientOptions(
+            postgrest_client_timeout=10,
+            storage_client_timeout=10,
+            function_client_timeout=10,
+            schema="public",
+        ),
+    )
 
 # Streamlit ตั้ง favicon ได้โดยตรง แต่ไอคอนติดตั้งบนหน้าจอหลักของ Android/iOS
 # ต้องมี Web App Manifest และ apple-touch-icon ใน <head> เพิ่มเติม
@@ -593,6 +610,8 @@ RATING_TOPICS = {
     "q4": "กิริยาวาจาและพฤติกรรมมีความเหมาะสม",
 }
 
+DRIVING_INCIDENT_KEYS = ("sudden_braking", "drowsy_driving")
+
 EXECUTIVE_RATING_I18N = {
     "TH": {
         "title": "ประเมินการปฏิบัติงานพนักงานขับรถ",
@@ -608,6 +627,9 @@ EXECUTIVE_RATING_I18N = {
         "required_confirm": "กรุณายืนยันข้อมูลก่อนส่ง",
         "success": "บันทึกผลการประเมินเรียบร้อยแล้ว ขอบคุณครับ",
         "topics": RATING_TOPICS,
+        "incidents": {"sudden_braking": "คนขับเบรกกระทันหันหรือไม่", "drowsy_driving": "คนขับมีอาการหลับในหรือไม่"},
+        "yes": "ใช่", "no": "ไม่ใช่", "braking_count": "จำนวนครั้ง (ไม่บังคับ)",
+        "drowsy_details": "รายละเอียด (ไม่บังคับ)",
     },
     "JP": {
         "title": "運転手の業務評価",
@@ -628,6 +650,9 @@ EXECUTIVE_RATING_I18N = {
             "q3": "安全に配慮した慎重な運転でしたか",
             "q4": "言葉遣い・態度・行動は適切でしたか",
         },
+        "incidents": {"sudden_braking": "運転手は急ブレーキをかけましたか", "drowsy_driving": "運転手に居眠り運転の兆候はありましたか"},
+        "yes": "はい", "no": "いいえ", "braking_count": "回数（任意）",
+        "drowsy_details": "詳細（任意）",
     },
     "EN": {
         "title": "Driver performance evaluation",
@@ -648,6 +673,9 @@ EXECUTIVE_RATING_I18N = {
             "q3": "Did the driver drive carefully and safely?",
             "q4": "Were the driver's communication, manners, and conduct appropriate?",
         },
+        "incidents": {"sudden_braking": "Did the driver brake suddenly?", "drowsy_driving": "Did the driver show signs of drowsy driving?"},
+        "yes": "Yes", "no": "No", "braking_count": "Number of times (optional)",
+        "drowsy_details": "Details (optional)",
     },
 }
 
@@ -694,7 +722,38 @@ def schedule_executive_rating_email(booking_id, recipient_email, end_time, ratin
         return False, str(exc)
 
 
-def build_rating_payload(scores, reasons, suggestion, submitted_at):
+def make_rating_qr_png(rating_url):
+    qr = qrcode.QRCode(box_size=8, border=4)
+    qr.add_data(rating_url)
+    qr.make(fit=True)
+    image = qr.make_image(fill_color="black", back_color="white")
+    output = io.BytesIO()
+    image.save(output, format="PNG")
+    return output.getvalue()
+
+
+def send_combined_rating_email(recipient, rating_url, qr_png):
+    """Immediate, admin-requested email; independent of scheduled booking jobs."""
+    if not EXECUTIVE_EMAIL_SCRIPT_URL or not EXECUTIVE_EMAIL_SHARED_TOKEN:
+        return False, "ยังไม่ได้ตั้งค่าระบบส่งอีเมล"
+    try:
+        response = requests.post(EXECUTIVE_EMAIL_SCRIPT_URL, json={
+            "sharedToken": EXECUTIVE_EMAIL_SHARED_TOKEN,
+            "action": "send_combined",
+            "recipient": recipient,
+            "ratingUrl": rating_url,
+            "qrPngBase64": base64.b64encode(qr_png).decode("ascii"),
+        }, timeout=30)
+        response.raise_for_status()
+        result = response.json()
+        if not result.get("ok"):
+            raise ValueError(result.get("error") or "ส่งอีเมลไม่สำเร็จ")
+        return True, "ส่งอีเมลลิงก์รวมและ QR code แล้ว"
+    except Exception as exc:
+        return False, str(exc)
+
+
+def build_rating_payload(scores, reasons, suggestion, submitted_at, incidents=None):
     requests = {}
     for key in RATING_TOPICS:
         score = scores[key]
@@ -705,11 +764,39 @@ def build_rating_payload(scores, reasons, suggestion, submitted_at):
             if not reason:
                 raise ValueError(f"กรุณาระบุเหตุผลคะแนนพิเศษ: {RATING_TOPICS[key]}")
             requests[key] = {"requested": score, "reason": reason, "status": "pending"}
+    incidents = incidents or {}
+    for key in DRIVING_INCIDENT_KEYS:
+        if key not in incidents:
+            continue
+        if type(incidents[key].get("yes")) is not bool:
+            raise ValueError("คำตอบเหตุการณ์ขับขี่ไม่ถูกต้อง")
+    braking = incidents.get("sudden_braking", {})
+    count = braking.get("count")
+    if braking.get("yes") and count not in (None, ""):
+        if type(count) is not int or count < 0:
+            raise ValueError("จำนวนครั้งต้องเป็นเลขจำนวนเต็มตั้งแต่ 0 ขึ้นไป")
     return {
         "is_rated": True, **{key: min(scores[key], 3) for key in RATING_TOPICS},
         "suggestion": suggestion,
-        "rating_review": {"version": 2, "submitted_at": submitted_at, "requests": requests},
+        "rating_review": {"version": 2, "submitted_at": submitted_at, "requests": requests,
+                          "driving_incidents": incidents},
     }
+
+
+def render_driving_incidents(copy, key_prefix):
+    answers = {}
+    for key in DRIVING_INCIDENT_KEYS:
+        selected = st.radio(copy["incidents"][key], [copy["no"], copy["yes"]],
+                            horizontal=True, key=f"{key_prefix}_{key}")
+        yes = selected == copy["yes"]
+        answers[key] = {"yes": yes}
+        if yes and key == "sudden_braking":
+            answers[key]["count"] = st.number_input(copy["braking_count"],
+                min_value=0, value=None, step=1, key=f"{key_prefix}_braking_count")
+        if yes and key == "drowsy_driving":
+            answers[key]["details"] = st.text_area(copy["drowsy_details"],
+                key=f"{key_prefix}_drowsy_details").strip()
+    return answers
 
 
 def render_public_executive_rating(raw_token):
@@ -768,6 +855,7 @@ def render_public_executive_rating(raw_token):
                 f"{copy['reason']}: {topic}",
                 key=f"public_{language}_{key}_reason",
             )
+        incidents = render_driving_incidents(copy, f"public_{language}_{booking['id']}")
         suggestion = st.text_area(copy["suggestion"], key=f"public_{language}_suggestion")
         confirm = st.checkbox(copy["confirm"], key=f"public_{language}_confirm")
         submitted = st.form_submit_button(copy["submit"], type="primary", width="stretch")
@@ -781,7 +869,7 @@ def render_public_executive_rating(raw_token):
             return
         try:
             submitted_at = datetime.now(THAILAND_TZ).isoformat()
-            payload = build_rating_payload(scores, reasons, suggestion, submitted_at)
+            payload = build_rating_payload(scores, reasons, suggestion, submitted_at, incidents)
             payload["rating_review"].update({"source": "executive_email", "language": language})
             payload.update({
                 "executive_rating_invite_status": "completed",
@@ -800,6 +888,98 @@ def render_public_executive_rating(raw_token):
             st.success(copy["success"])
         except Exception:
             st.error("ไม่สามารถบันทึกผลได้ หรือรายการนี้ถูกประเมินแล้ว กรุณาติดต่อผู้ดูแลระบบ")
+
+
+def render_combined_executive_rating(raw_token):
+    """One expiring public link with one confirmation for all selected bookings."""
+    token_hash = hash_executive_rating_token(raw_token)
+    try:
+        batches = get_executive_batch_client().table("executive_rating_batches").select("*") \
+            .eq("token_hash", token_hash).limit(1).execute().data or []
+        if not batches:
+            st.warning("ลิงก์ไม่ถูกต้อง ถูกใช้งานแล้ว หรือหมดอายุ")
+            return
+        batch = batches[0]
+        expires = pd.to_datetime(batch["expires_at"], utc=True)
+        if datetime.now(THAILAND_TZ) > expires.to_pydatetime().astimezone(THAILAND_TZ):
+            st.warning("ลิงก์ประเมินหมดอายุแล้ว")
+            return
+        ids = batch["booking_ids"]
+        rows = supabase.table("bookings").select("*").in_("id", ids).execute().data or []
+        by_id = {row["id"]: row for row in rows}
+        if len(by_id) != len(ids):
+            st.error("ข้อมูลรายการประเมินไม่ครบ กรุณาติดต่อผู้ดูแลระบบ")
+            return
+        pending = [by_id[booking_id] for booking_id in ids if not by_id[booking_id].get("is_rated")]
+        if not pending:
+            st.success("ทุกรายการได้รับการประเมินแล้ว")
+            return
+        for row in pending:
+            start = booking_wall_datetime(row.get("start_time"))
+            end = booking_wall_datetime(row.get("end_time"))
+            if (not row.get("is_executive_booking") or row.get("status") != "Approved"
+                    or row.get("resource") not in RATABLE_CARS
+                    or not start or start < EXECUTIVE_RATING_START_CUTOFF
+                    or not end or end > thai_wall_now()):
+                st.error("มีรายการที่ไม่เข้าเงื่อนไขประเมิน กรุณาติดต่อผู้ดูแลระบบ")
+                return
+    except Exception:
+        st.error("ไม่สามารถเปิดแบบประเมินได้ กรุณาติดต่อผู้ดูแลระบบ")
+        return
+
+    st.markdown('<div class="main-title">Executive Driver Evaluation</div>', unsafe_allow_html=True)
+    language = st.segmented_control("Language / 言語 / ภาษา", ["TH", "JP", "EN"],
+                                    default="TH", key="combined_rating_language") or "TH"
+    copy = EXECUTIVE_RATING_I18N[language]
+    st.subheader(copy["title"])
+    st.caption(copy["intro"])
+    with st.form(f"combined_rating_{batch['id']}_{language}"):
+        answers = {}
+        for row in pending:
+            booking_id = row["id"]
+            st.markdown(f"### #{booking_id} · {row['resource']} · {booking_wall_datetime(row['end_time']):%d/%m/%Y %H:%M}")
+            st.write(f"**{copy['scale']}**")
+            st.info(copy["special"])
+            scores, reasons = {}, {}
+            for key, topic in copy["topics"].items():
+                scores[key] = st.radio(topic, [1, 2, 3, 4, 5], index=2, horizontal=True,
+                                       key=f"combined_{batch['id']}_{booking_id}_{language}_{key}")
+                reasons[key] = st.text_area(f"{copy['reason']}: {topic}",
+                    key=f"combined_{batch['id']}_{booking_id}_{language}_{key}_reason")
+            incidents = render_driving_incidents(copy, f"combined_{batch['id']}_{booking_id}_{language}")
+            suggestion = st.text_area(copy["suggestion"],
+                key=f"combined_{batch['id']}_{booking_id}_{language}_suggestion")
+            answers[booking_id] = (scores, reasons, incidents, suggestion)
+        confirm = st.checkbox(copy["confirm"])
+        submitted = st.form_submit_button(copy["submit"], type="primary", width="stretch")
+
+    if submitted:
+        if not confirm:
+            st.error(copy["required_confirm"])
+            return
+        try:
+            submitted_at = datetime.now(THAILAND_TZ).isoformat()
+            payloads = {}
+            for booking_id, (scores, reasons, incidents, suggestion) in answers.items():
+                payload = build_rating_payload(scores, reasons, suggestion, submitted_at, incidents)
+                payload["rating_review"].update({"source": "executive_combined", "language": language,
+                                                  "batch_id": batch["id"]})
+                payload.update({"executive_rating_invite_status": "completed",
+                                "executive_rating_completed_at": submitted_at,
+                                "executive_rating_token_hash": None})
+                payloads[booking_id] = payload
+            for booking_id, payload in payloads.items():
+                saved = supabase.table("bookings").update(payload).eq("id", booking_id) \
+                    .eq("is_executive_booking", True).eq("status", "Approved") \
+                    .or_("is_rated.eq.false,is_rated.is.null").execute()
+                if not saved.data:
+                    raise ValueError(f"รายการ #{booking_id} ถูกประเมินแล้วหรือข้อมูลเปลี่ยน")
+            get_executive_batch_client().table("executive_rating_batches").update({
+                "completed_at": submitted_at, "token_hash": None,
+            }).eq("id", batch["id"]).eq("token_hash", token_hash).execute()
+            st.success(copy["success"])
+        except Exception:
+            st.error("บันทึกไม่ครบทุกข้อ กรุณาโหลดหน้าใหม่และตรวจรายการที่ยังไม่ถูกประเมิน")
 
 
 def decide_rating_request(review, key, approve, reviewer, note, reviewed_at):
@@ -1492,6 +1672,74 @@ def load_management_schedule():
     return schedule_df
 
 
+def render_completed_executive_rating_admin(recorder):
+    """Admin-only manual invitation, separate from automatic email scheduling."""
+    st.markdown("### สร้างลิงก์ประเมินรวมสำหรับงานที่สิ้นสุดแล้ว")
+    try:
+        rows = supabase.table("bookings").select(
+            "id,resource,start_time,end_time,destination,is_rated,status,is_executive_booking"
+        ).eq("status", "Approved").eq("is_executive_booking", True) \
+            .in_("resource", RATABLE_CARS).gte("start_time", EXECUTIVE_RATING_START_CUTOFF.isoformat()) \
+            .lt("end_time", thai_wall_now().isoformat()).order("end_time", desc=True).execute().data or []
+    except Exception as exc:
+        st.error(f"โหลดรายการที่สิ้นสุดแล้วไม่ได้: {exc}")
+        return
+    eligible = [row for row in rows if not row.get("is_rated")]
+    labels = {row["id"]: f"#{row['id']} · {row['resource']} · "
+              f"{booking_wall_datetime(row['end_time']):%d/%m/%Y %H:%M} · {str(row.get('destination') or '-')[:40]}"
+              for row in eligible}
+    selected = st.multiselect("เลือกรายการที่ยังไม่ประเมิน (อย่างน้อย 2 รายการ)",
+                              list(labels), format_func=lambda booking_id: labels[booking_id])
+    if st.button("รวมและสร้างลิงก์ประเมิน", disabled=len(selected) < 2, type="primary"):
+        try:
+            fresh = supabase.table("bookings").select(
+                "id,resource,start_time,end_time,is_rated,status,is_executive_booking"
+            ).in_("id", selected).execute().data or []
+            if len(fresh) != len(selected) or any(
+                row.get("is_rated") or row.get("status") != "Approved"
+                or not row.get("is_executive_booking") or row.get("resource") not in RATABLE_CARS
+                or booking_wall_datetime(row["start_time"]) < EXECUTIVE_RATING_START_CUTOFF
+                or booking_wall_datetime(row["end_time"]) >= thai_wall_now()
+                for row in fresh
+            ):
+                raise ValueError("รายการเปลี่ยนแปลงหรือไม่เข้าเงื่อนไข กรุณาโหลดหน้าใหม่")
+            raw_token = secrets.token_urlsafe(32)
+            now = datetime.now(THAILAND_TZ)
+            expires_at = now + timedelta(days=EXECUTIVE_RATING_LINK_DAYS)
+            get_executive_batch_client().table("executive_rating_batches").insert({
+                "token_hash": hash_executive_rating_token(raw_token),
+                "booking_ids": selected,
+                "created_by": recorder,
+                "created_at": now.isoformat(),
+                "expires_at": expires_at.isoformat(),
+            }).execute()
+            st.session_state["combined_rating_invite"] = {
+                "url": f"{PUBLIC_WEB_URL}/?executive_rating_batch_token={quote(raw_token)}",
+                "expires_at": expires_at.isoformat(), "ids": selected,
+            }
+            st.success("สร้างลิงก์รวมแล้ว ใช้ได้ 7 วันนับจากเวลาสร้าง")
+        except Exception as exc:
+            st.error(f"สร้างลิงก์รวมไม่สำเร็จ: {exc}")
+    invite = st.session_state.get("combined_rating_invite")
+    if invite:
+        expiry = datetime.fromisoformat(invite["expires_at"])
+        st.info(f"รายการ {', '.join('#' + str(item) for item in invite['ids'])} · หมดอายุ {expiry:%d/%m/%Y %H:%M} (เวลาไทย)")
+        st.code(invite["url"], language=None)
+        qr_png = make_rating_qr_png(invite["url"])
+        st.image(qr_png, caption="QR code สำหรับเปิดลิงก์รวมบนมือถือ", width=260)
+        st.download_button("ดาวน์โหลด QR code", qr_png, "executive-rating-qr.png", "image/png")
+        recipient = st.text_input("อีเมลสำหรับส่งลิงก์รวม (แยกจากอีเมลอัตโนมัติ)",
+                                  key="combined_rating_recipient")
+        if st.button("ส่งอีเมลลิงก์รวมพร้อม QR code"):
+            if not is_valid_email(recipient):
+                st.error("กรุณากรอกอีเมลผู้รับให้ถูกต้อง")
+            elif datetime.now(THAILAND_TZ) >= expiry:
+                st.error("ลิงก์หมดอายุแล้ว กรุณาสร้างใหม่")
+            else:
+                sent, message = send_combined_rating_email(recipient.strip(), invite["url"], qr_png)
+                (st.success if sent else st.error)(message)
+
+
 def render_management_schedule():
     """Read-only daily/monthly management schedule, separated from the booking database."""
     st.markdown('<div class="main-title">ตารางผู้บริหาร</div>', unsafe_allow_html=True)
@@ -1661,6 +1909,8 @@ def render_management_schedule():
                         st.rerun()
                     except Exception as exc:
                         st.error(f"บันทึกไม่สำเร็จ: {exc}")
+
+    render_completed_executive_rating_admin(recorder)
 
     try:
         active_executive_cutoff = thai_wall_now().isoformat()
@@ -1890,6 +2140,11 @@ def check_admin_login():
 # ==========================================
 # 6. SIDEBAR & NAVIGATION
 # ==========================================
+public_combined_rating_token = st.query_params.get("executive_rating_batch_token", "")
+if public_combined_rating_token:
+    render_combined_executive_rating(public_combined_rating_token)
+    st.stop()
+
 public_executive_rating_token = st.query_params.get("executive_rating_token", "")
 if public_executive_rating_token:
     render_public_executive_rating(public_executive_rating_token)
@@ -2387,6 +2642,7 @@ elif choice == "⭐ ประเมินการใช้งาน":
                     scores[key] = st.radio(topic, [1, 2, 3, 4, 5], index=2, horizontal=True)
                     reasons[key] = st.text_area(f"เหตุผลคะแนน 4–5: {topic}",
                         placeholder="กรอกเมื่อเลือก 4 หรือ 5: เกิดเหตุการณ์ใด ทำอะไรเกินมาตรฐาน และผลที่เกิดขึ้น")
+                incidents = render_driving_incidents(EXECUTIVE_RATING_I18N["TH"], f"normal_{selected_booking['id']}")
                 suggestion = st.text_area("ข้อเสนอแนะอื่นๆ")
                 
                 st.warning("⚠️ โปรดตรวจสอบข้อมูลให้ครบถ้วนก่อนส่ง (ไม่สามารถแก้ไขข้อมูลได้ภายหลังการให้คะแนน)")
@@ -2396,7 +2652,7 @@ elif choice == "⭐ ประเมินการใช้งาน":
                     if not confirm:
                         st.error("❌ กรุณากดยืนยัน (ติ๊กถูกที่ช่อง แน่ใจ / ยืนยันข้อมูล) ก่อนส่งผลประเมินครับ")
                     else:
-                        payload = build_rating_payload(scores, reasons, suggestion, datetime.now(THAILAND_TZ).isoformat())
+                        payload = build_rating_payload(scores, reasons, suggestion, datetime.now(THAILAND_TZ).isoformat(), incidents)
                         saved = supabase.table("bookings").update(payload).eq("id", selected_booking['id']) \
                             .eq("status", "Approved").or_("is_rated.eq.false,is_rated.is.null").execute()
                         if not saved.data:
