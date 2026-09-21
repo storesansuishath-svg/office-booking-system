@@ -2392,7 +2392,10 @@ if choice in ["🏠 หน้าแรก", "📝 จองใหม่"]:
     # +++ โค้ดกระพริบโชว์รายชื่อผู้ค้างประเมินเพื่อกดดัน +++
     try:
         now_iso_alert = thai_wall_now().isoformat()
-        res_alert = supabase.table("bookings").select("requester, dept, is_rated").eq("status", "Approved").in_("resource", RATABLE_CARS).lt("end_time", now_iso_alert).gte("end_time", "2026-07-01T00:00:00").execute()
+        # Keep the public reminder aligned with the booking lock: executive
+        # trips are evaluated through their private email link and never lock
+        # their department's normal vehicle bookings.
+        res_alert = supabase.table("bookings").select("requester, dept, is_rated").eq("status", "Approved").in_("resource", RATABLE_CARS).or_("is_executive_booking.eq.false,is_executive_booking.is.null").lt("end_time", now_iso_alert).gte("end_time", "2026-07-01T00:00:00").execute()
         
         if res_alert.data:
             unrated_list = set()
