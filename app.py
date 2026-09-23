@@ -2746,6 +2746,69 @@ elif choice == "🔑 Admin (อนุมัติ)":
                         except Exception as e: st.error(f"ลบไม่สำเร็จ: {e}")
 
         st.markdown("---")
+        # The root account alone may edit Admin credentials.  Its username is
+        # intentionally fixed because this legacy app uses that username as
+        # the authorization check for every Admin-management operation.
+        if st.session_state["admin_user"] == "administrator":
+            st.markdown("##### ✏️ แก้ไขบัญชี Admin")
+            if admins:
+                admin_options = {
+                    f"{adm['username']} (ID: {adm['id']})": adm
+                    for adm in admins
+                }
+                selected_admin_label = st.selectbox(
+                    "เลือกบัญชีที่ต้องการแก้ไข",
+                    list(admin_options.keys()),
+                    key="edit_admin_select",
+                )
+                selected_admin = admin_options[selected_admin_label]
+                is_root_admin = selected_admin["username"] == "administrator"
+                with st.form("edit_admin_form"):
+                    edited_username = st.text_input(
+                        "Username",
+                        selected_admin["username"],
+                        disabled=is_root_admin,
+                    )
+                    edited_password = st.text_input(
+                        "Password ใหม่ (เว้นว่างหากไม่เปลี่ยน)",
+                        type="password",
+                    )
+                    if is_root_admin:
+                        st.caption("บัญชี administrator เปลี่ยนได้เฉพาะรหัสผ่าน เพื่อคงสิทธิ์ผู้ดูแลหลักของระบบ")
+                    if st.form_submit_button("บันทึกการแก้ไข", type="primary"):
+                        clean_username = edited_username.strip()
+                        clean_password = edited_password.strip()
+                        updates = {}
+                        validation_error = False
+                        if not is_root_admin:
+                            if not clean_username:
+                                st.error("กรุณากรอก Username")
+                                validation_error = True
+                            elif clean_username != selected_admin["username"]:
+                                duplicate = any(
+                                    adm["id"] != selected_admin["id"]
+                                    and adm["username"] == clean_username
+                                    for adm in admins
+                                )
+                                if duplicate:
+                                    st.error("❌ Username นี้มีอยู่แล้วในระบบ")
+                                    validation_error = True
+                                else:
+                                    updates["username"] = clean_username
+                        if clean_password:
+                            updates["password"] = clean_password
+                        if updates and not validation_error:
+                            try:
+                                supabase.table("app_admins").update(updates).eq("id", selected_admin["id"]).execute()
+                                st.success(f"✅ แก้ไขบัญชี {selected_admin['username']} สำเร็จ")
+                                time.sleep(1)
+                                st.rerun()
+                            except Exception as e:
+                                st.error(f"แก้ไขไม่สำเร็จ: {e}")
+                        elif not validation_error:
+                            st.info("ไม่มีข้อมูลที่เปลี่ยนแปลง")
+
+        st.markdown("---")
         # ลอจิกเดิม: ให้สิทธิ์เพิ่มเฉพาะ user: administrator
         if st.session_state["admin_user"] == "administrator":
             st.markdown("##### ➕ เพิ่ม Admin ใหม่")
