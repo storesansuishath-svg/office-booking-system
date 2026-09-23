@@ -2739,7 +2739,7 @@ elif choice == "🔑 Admin (อนุมัติ)":
                 if adm['username'] != "administrator":
                     if col_d.button("🗑️ ลบแอดมิน", key=f"del_adm_{idx}"):
                         try:
-                            supabase.table("app_admins").delete().eq("id", adm['id']).execute()
+                            supabase.table("app_admins").delete().eq("username", adm['username']).execute()
                             st.success(f"ลบ {adm['username']} สำเร็จ")
                             time.sleep(1)
                             st.rerun()
@@ -2752,10 +2752,7 @@ elif choice == "🔑 Admin (อนุมัติ)":
         if st.session_state["admin_user"] == "administrator":
             st.markdown("##### ✏️ แก้ไขบัญชี Admin")
             if admins:
-                admin_options = {
-                    f"{adm['username']} (ID: {adm['id']})": adm
-                    for adm in admins
-                }
+                admin_options = {adm["username"]: adm for adm in admins}
                 selected_admin_label = st.selectbox(
                     "เลือกบัญชีที่ต้องการแก้ไข",
                     list(admin_options.keys()),
@@ -2786,7 +2783,7 @@ elif choice == "🔑 Admin (อนุมัติ)":
                                 validation_error = True
                             elif clean_username != selected_admin["username"]:
                                 duplicate = any(
-                                    adm["id"] != selected_admin["id"]
+                                    adm["username"] != selected_admin["username"]
                                     and adm["username"] == clean_username
                                     for adm in admins
                                 )
@@ -2799,7 +2796,7 @@ elif choice == "🔑 Admin (อนุมัติ)":
                             updates["password"] = clean_password
                         if updates and not validation_error:
                             try:
-                                supabase.table("app_admins").update(updates).eq("id", selected_admin["id"]).execute()
+                                supabase.table("app_admins").update(updates).eq("username", selected_admin["username"]).execute()
                                 st.success(f"✅ แก้ไขบัญชี {selected_admin['username']} สำเร็จ")
                                 time.sleep(1)
                                 st.rerun()

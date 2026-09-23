@@ -21,9 +21,11 @@ class AdminManagementTests(unittest.TestCase):
         self.assertIn('disabled=is_root_admin', WEB_SOURCE)
         self.assertIn('updates["password"] = clean_password', WEB_SOURCE)
 
-    def test_username_update_checks_for_duplicates_and_uses_selected_row_id(self):
+    def test_username_update_checks_for_duplicates_and_uses_existing_username(self):
         self.assertIn('and adm["username"] == clean_username', WEB_SOURCE)
-        self.assertIn('.update(updates).eq("id", selected_admin["id"])', WEB_SOURCE)
+        self.assertIn('.update(updates).eq("username", selected_admin["username"])', WEB_SOURCE)
+        self.assertIn('admin_options = {adm["username"]: adm for adm in admins}', WEB_SOURCE)
+        self.assertNotIn('selected_admin["id"]', WEB_SOURCE)
 
 
 if __name__ == "__main__":
