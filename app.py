@@ -92,27 +92,29 @@ EXECUTIVE_RATING_LINK_DAYS = 7
 EXECUTIVE_RATING_START_CUTOFF = datetime(2026, 10, 1, 0, 0)
 
 # 🚗 ตั้งค่ารายชื่อรถยนต์
-SYS_CARS = ["Civic (ตุ้ม)", "Civic (บอล)", "Camry", "Camry (เนก)", "MG", "MG (เนก)"]
+SYS_CARS = ["Civic (บัส)", "Civic (บอล)", "Camry (ตุ้ม)", "MG-EP (เนก)"]
+LEGACY_CARS = ["Civic (ตุ้ม)", "Camry", "Camry (เนก)", "MG", "MG (เนก)"]
+ALL_CAR_NAMES = SYS_CARS + LEGACY_CARS
 
-# รถขับเอง ไม่ต้องเข้าสู่เงื่อนไขประเมินพนักงานขับรถ
-# ส่วนรถที่ระบุชื่อผู้ขับ (เนก) ยังต้องประเมินตามปกติ
-SELF_DRIVE_CARS = {"Camry", "MG"}
-RATABLE_CARS = [car for car in SYS_CARS if car not in SELF_DRIVE_CARS]
+# รถทั้งสี่คันมีพนักงานขับรถและต้องประเมิน
+SELF_DRIVE_CARS = set()
+# Keep historical driver bookings eligible for outstanding ratings.
+RATABLE_CARS = SYS_CARS + ["Civic (ตุ้ม)", "Camry (เนก)", "MG (เนก)"]
 
 # รถชื่อแตกต่างกันแต่เป็นรถคันเดียวกัน ต้องใช้คิวร่วมกัน
 RESOURCE_CONFLICT_GROUPS = {
-    "Camry": ["Camry", "Camry (เนก)"],
-    "Camry (เนก)": ["Camry", "Camry (เนก)"],
-    "MG": ["MG", "MG (เนก)"],
-    "MG (เนก)": ["MG", "MG (เนก)"],
+    "Civic (บัส)": ["Civic (บัส)", "Civic (ตุ้ม)"],
+    "Civic (ตุ้ม)": ["Civic (บัส)", "Civic (ตุ้ม)"],
+    "Camry (ตุ้ม)": ["Camry (ตุ้ม)", "Camry (เนก)", "Camry"],
+    "Camry (เนก)": ["Camry (ตุ้ม)", "Camry (เนก)", "Camry"],
+    "Camry": ["Camry (ตุ้ม)", "Camry (เนก)", "Camry"],
+    "MG-EP (เนก)": ["MG-EP (เนก)", "MG (เนก)", "MG"],
+    "MG (เนก)": ["MG-EP (เนก)", "MG (เนก)", "MG"],
+    "MG": ["MG-EP (เนก)", "MG (เนก)", "MG"],
 }
 
-# Camry (เนก) และ MG (เนก) ใช้พนักงานขับรถคนเดียวกัน
-# จึงต้องตรวจคิวของคนขับร่วมกัน แม้เป็นรถคนละคัน
-DRIVER_CONFLICT_GROUPS = {
-    "Camry (เนก)": ["Camry (เนก)", "MG (เนก)"],
-    "MG (เนก)": ["Camry (เนก)", "MG (เนก)"],
-}
+# รถแต่ละคันมีพนักงานขับรถประจำต่างคนกัน
+DRIVER_CONFLICT_GROUPS = {}
 
 # 🏢 ตั้งค่ารายชื่อห้องประชุม
 SYS_ROOMS = ["ห้องชั้น 1 (ห้องใหญ่)", "ห้องชั้น 2", "ห้อง VIP", "ห้องชั้นลอย", "ห้อง Production"]
@@ -1136,12 +1138,10 @@ THAI_MONTH_ALIASES = {
     "ธันวาคม": 12, "ธ.ค.": 12, "ธ.ค": 12,
 }
 RESOURCE_SEARCH_ALIASES = {
-    "Civic (ตุ้ม)": ["civic (ตุ้ม)", "civic ตุ้ม", "ซีวิค ตุ้ม", "ตุ้ม"],
+    "Civic (บัส)": ["civic (บัส)", "civic บัส", "ซีวิค บัส", "บัส", "civic (ตุ้ม)"],
     "Civic (บอล)": ["civic (บอล)", "civic บอล", "ซีวิค บอล", "บอล"],
-    "Camry": ["camry", "แคมรี่", "คัมรี่"],
-    "Camry (เนก)": ["camry (เนก)", "camry เนก", "แคมรี่ เนก", "คัมรี่ เนก"],
-    "MG (เนก)": ["mg (เนก)", "mg เนก", "เอ็มจี เนก"],
-    "MG": ["mg", "เอ็มจี", "mg-ep"],
+    "Camry (ตุ้ม)": ["camry (ตุ้ม)", "camry ตุ้ม", "แคมรี่ ตุ้ม", "camry (เนก)", "camry", "แคมรี่", "คัมรี่"],
+    "MG-EP (เนก)": ["mg-ep (เนก)", "mg-ep เนก", "mg (เนก)", "mg เนก", "เอ็มจี เนก", "mg-ep", "mg", "เอ็มจี"],
     "ห้องชั้น 1 (ห้องใหญ่)": ["ห้องชั้น 1", "ห้องใหญ่", "ชั้นหนึ่ง"],
     "ห้องชั้น 2": ["ห้องชั้น 2", "ชั้นสอง"],
     "ห้อง VIP": ["ห้อง vip", "vip"],
@@ -1248,9 +1248,6 @@ def _find_requested_resource(text):
     for resource, aliases in RESOURCE_SEARCH_ALIASES.items():
         if any(alias.lower() in text for alias in sorted(aliases, key=len, reverse=True)):
             matches.append(resource)
-    # "MG (เนก)" มีคำว่า MG อยู่ด้วย ให้ใช้ชื่อที่เจาะจงกว่าเพียงรายการเดียว
-    if "MG (เนก)" in matches and "MG" in matches:
-        matches.remove("MG")
     return matches
 
 
@@ -1917,7 +1914,7 @@ def render_management_schedule():
         executive_result = (
             supabase.table("bookings").select("*")
             .eq("status", "Approved").eq("is_executive_booking", True)
-            .gt("end_time", active_executive_cutoff).in_("resource", SYS_CARS)
+            .gt("end_time", active_executive_cutoff).in_("resource", ALL_CAR_NAMES)
             .order("start_time").execute()
         )
         executive_df = pd.DataFrame(executive_result.data or [])
@@ -2007,9 +2004,10 @@ def render_management_schedule():
     with st.form("edit_executive_booking_form"):
         edit_left, edit_right = st.columns(2)
         with edit_left:
-            car_index = SYS_CARS.index(record["resource"]) if record["resource"] in SYS_CARS else 0
+            edit_car_options = ALL_CAR_NAMES if record["resource"] in LEGACY_CARS else SYS_CARS
+            car_index = edit_car_options.index(record["resource"]) if record["resource"] in edit_car_options else 0
             edit_key = f"edit_executive_{record['id']}"
-            edit_resource = st.selectbox("รถยนต์", SYS_CARS, index=car_index, key=f"{edit_key}_resource")
+            edit_resource = st.selectbox("รถยนต์", edit_car_options, index=car_index, key=f"{edit_key}_resource")
             edit_destination = st.text_input("สถานที่ปลายทาง / Google Map", str(record.get("destination", "")), key=f"{edit_key}_destination")
             edit_purpose = st.text_area("วัตถุประสงค์การใช้งาน", str(record.get("purpose", "")), key=f"{edit_key}_purpose")
             previous_email = record.get("executive_rating_email")
@@ -2237,10 +2235,10 @@ if choice in ["🏠 หน้าแรก", "📝 จองใหม่"]:
         today_bookings = type('obj', (object,), {'data': []})
         
     car_status = {
-        "Civic (ตุ้ม)": {"text": "🟢 ปัจจุบันว่าง", "time": "", "class": "status-free"},
+        "Civic (บัส)": {"text": "🟢 ปัจจุบันว่าง", "time": "", "class": "status-free"},
         "Civic (บอล)": {"text": "🟢 ปัจจุบันว่าง", "time": "", "class": "status-free"},
-        "Camry (เนก)": {"text": "🟢 ปัจจุบันว่าง", "time": "", "class": "status-free"},
-        "MG": {"text": "🟢 ปัจจุบันว่าง", "time": "", "class": "status-free"}
+        "Camry (ตุ้ม)": {"text": "🟢 ปัจจุบันว่าง", "time": "", "class": "status-free"},
+        "MG-EP (เนก)": {"text": "🟢 ปัจจุบันว่าง", "time": "", "class": "status-free"}
     }
 
     room_status = {
@@ -2255,8 +2253,9 @@ if choice in ["🏠 หน้าแรก", "📝 จองใหม่"]:
         for b in today_bookings.data:
             res_name = b['resource']
             key = (
-                "MG" if res_name in RESOURCE_CONFLICT_GROUPS["MG"]
-                else "Camry (เนก)" if res_name in RESOURCE_CONFLICT_GROUPS["Camry"]
+                "MG-EP (เนก)" if res_name in RESOURCE_CONFLICT_GROUPS["MG-EP (เนก)"]
+                else "Camry (ตุ้ม)" if res_name in RESOURCE_CONFLICT_GROUPS["Camry (ตุ้ม)"]
+                else "Civic (บัส)" if res_name in RESOURCE_CONFLICT_GROUPS["Civic (บัส)"]
                 else res_name
             )
             st_dt = pd.to_datetime(b['start_time']).tz_localize(None)
@@ -2295,13 +2294,13 @@ if choice in ["🏠 หน้าแรก", "📝 จองใหม่"]:
     <div class="driver-grid-container">
     <div class="driver-card">
         <div class="card-header">
-            <h4>🚗 Civic <span style="color:#666; font-size:14px;">(ตุ้ม)</span></h4>
-            <div class="status-badge {car_status['Civic (ตุ้ม)']['class']}">
-                <div>{car_status['Civic (ตุ้ม)']['text']}</div>
-                <div class="status-time">{car_status['Civic (ตุ้ม)']['time']}</div>
+            <h4>🚗 Civic <span style="color:#666; font-size:14px;">(บัส)</span></h4>
+            <div class="status-badge {car_status['Civic (บัส)']['class']}">
+                <div>{car_status['Civic (บัส)']['text']}</div>
+                <div class="status-time">{car_status['Civic (บัส)']['time']}</div>
             </div>
         </div>
-        <p><b>ทะเบียน:</b> 5ขฬ-4317-กทม</p><p><b>โทร:</b> <span class="highlight-text">098-8388055</span></p>
+        <p><b>ทะเบียน:</b> 5ขฬ-4317-กทม</p><p><b>โทร:</b> รออัปเดต</p>
     </div>
     <div class="driver-card">
         <div class="card-header">
@@ -2311,27 +2310,27 @@ if choice in ["🏠 หน้าแรก", "📝 จองใหม่"]:
                 <div class="status-time">{car_status['Civic (บอล)']['time']}</div>
             </div>
         </div>
-        <p><b>ทะเบียน:</b> 5ขฬ-7680-กทม</p><p><b>โทร:</b> <span class="highlight-text">063-9305458</span></p>
+        <p><b>ทะเบียน:</b> 5ขฬ-7680-กทม</p><p><b>โทร:</b> <a class="highlight-text" href="tel:0639305458" aria-label="โทรหาคนขับ Civic บอล">9305 · กดโทร</a></p>
     </div>
     <div class="driver-card">
         <div class="card-header">
-            <h4>🚙 Camry <span style="color:#666; font-size:14px;">(เนก)</span></h4>
-            <div class="status-badge {car_status['Camry (เนก)']['class']}">
-                <div>{car_status['Camry (เนก)']['text']}</div>
-                <div class="status-time">{car_status['Camry (เนก)']['time']}</div>
+            <h4>🚙 Camry <span style="color:#666; font-size:14px;">(ตุ้ม)</span></h4>
+            <div class="status-badge {car_status['Camry (ตุ้ม)']['class']}">
+                <div>{car_status['Camry (ตุ้ม)']['text']}</div>
+                <div class="status-time">{car_status['Camry (ตุ้ม)']['time']}</div>
             </div>
         </div>
-        <p><b>ทะเบียน:</b> 6ขข-4068-กทม</p><p><b>โทร:</b> <span class="highlight-text">081-0402527</span></p>
+        <p><b>ทะเบียน:</b> 6ขข-4068-กทม</p><p><b>โทร:</b> <a class="highlight-text" href="tel:0988388055" aria-label="โทรหาคนขับ Camry ตุ้ม">8388 · กดโทร</a></p>
     </div>
     <div class="driver-card">
         <div class="card-header">
-            <h4>🚙 MG-EP</h4>
-            <div class="status-badge {car_status['MG']['class']}">
-                <div>{car_status['MG']['text']}</div>
-                <div class="status-time">{car_status['MG']['time']}</div>
+            <h4>🚙 MG-EP <span style="color:#666; font-size:14px;">(เนก)</span></h4>
+            <div class="status-badge {car_status['MG-EP (เนก)']['class']}">
+                <div>{car_status['MG-EP (เนก)']['text']}</div>
+                <div class="status-time">{car_status['MG-EP (เนก)']['time']}</div>
             </div>
         </div>
-        <p><b>ทะเบียน:</b> 5ขก-7378-กทม</p><p><b>โทร:</b> <span style="color:#9E9E9E;">-</span></p>
+        <p><b>ทะเบียน:</b> 5ขก-7378-กทม</p><p><b>โทร:</b> <a class="highlight-text" href="tel:0810402527" aria-label="โทรหาคนขับ MG-EP เนก">0402 · กดโทร</a></p>
     </div>
     </div>
 
@@ -2534,7 +2533,7 @@ elif choice == "📅 ตารางงาน (Real-time)":
     
     if df.empty: st.info("ขณะนี้ไม่มีรายการจอง")
     else:
-        if view_cat == "รถยนต์": df = df[df['resource'].isin(SYS_CARS)]
+        if view_cat == "รถยนต์": df = df[df['resource'].isin(ALL_CAR_NAMES)]
         elif view_cat == "ห้องประชุม": df = df[df['resource'].isin(SYS_ROOMS)]
         if search_q: df = df[df['requester'].str.contains(search_q, case=False, na=False) | df['destination'].str.contains(search_q, case=False, na=False)]
         
@@ -2559,7 +2558,7 @@ elif choice == "📅 ตารางงาน (Real-time)":
                     
                     with st.form("edit_full_form"):
                         e_col1, e_col2 = st.columns(2)
-                        all_res = SYS_CARS + SYS_ROOMS
+                        all_res = ALL_CAR_NAMES + SYS_ROOMS
                         try: res_idx = all_res.index(row['resource'])
                         except: res_idx = 0 
                         
@@ -2850,7 +2849,7 @@ elif choice == "📊 รายงานประจำเดือน":
             rep_type = st.selectbox("ประเภทรายงาน", ["ทั้งหมด", "รถยนต์", "ห้องประชุม"])
             
             f_df = df_rep[df_rep['Month-Year'] == sel_m].copy()
-            if rep_type == "รถยนต์": f_df = f_df[f_df['resource'].isin(SYS_CARS)]
+            if rep_type == "รถยนต์": f_df = f_df[f_df['resource'].isin(ALL_CAR_NAMES)]
             elif rep_type == "ห้องประชุม": f_df = f_df[f_df['resource'].isin(SYS_ROOMS)]
             
             f_df['เวลาเริ่ม'] = f_df['start_time'].dt.strftime('%d/%m/%Y %H:%M')
