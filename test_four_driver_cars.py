@@ -30,6 +30,10 @@ class FourDriverCarsProductionTests(unittest.TestCase):
             self.assertIn(f">{masked} · กดโทร</a>", SOURCE)
         self.assertIn("<b>โทร:</b> รออัปเดต", SOURCE)
 
+    def test_calendar_reads_legacy_booking_names(self):
+        self.assertIn("database_resources = sorted({", SOURCE)
+        self.assertIn("row[\"resource\"] in get_conflict_resources(resource)", SOURCE)
+
 
 if __name__ == "__main__":
     unittest.main()

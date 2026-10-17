@@ -1512,9 +1512,12 @@ def render_smart_availability_assistant():
             )
 
 def load_month_usage(resources, month_start, next_month):
-    """Group approved bookings by date and resource for the month calendar."""
+    """Group approved bookings by date and displayed resource for the month calendar."""
+    database_resources = sorted({
+        member for resource in resources for member in get_conflict_resources(resource)
+    })
     rows = supabase.table("bookings").select("resource,start_time,end_time").eq("status", "Approved") \
-        .in_("resource", resources).gt("end_time", month_start.isoformat()) \
+        .in_("resource", database_resources).gt("end_time", month_start.isoformat()) \
         .lt("start_time", next_month.isoformat()).execute().data
     usage = {}
     for row in rows:
@@ -1528,7 +1531,11 @@ def load_month_usage(resources, month_start, next_month):
             slot_start = max(start, day_start)
             slot_end = min(end, day_end)
             if slot_start < slot_end:
-                usage.setdefault(day_cursor, {}).setdefault(row["resource"], []).append(
+                display_resource = next(
+                    (resource for resource in resources if row["resource"] in get_conflict_resources(resource)),
+                    row["resource"],
+                )
+                usage.setdefault(day_cursor, {}).setdefault(display_resource, []).append(
                     f"{slot_start:%H:%M}-{slot_end:%H:%M}"
                 )
             day_cursor += timedelta(days=1)
