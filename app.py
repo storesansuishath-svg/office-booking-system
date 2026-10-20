@@ -90,6 +90,7 @@ EXECUTIVE_EMAIL_SCRIPT_URL = get_runtime_setting("EXECUTIVE_EMAIL_SCRIPT_URL", "
 EXECUTIVE_EMAIL_SHARED_TOKEN = get_runtime_setting("EXECUTIVE_EMAIL_SHARED_TOKEN", "")
 EXECUTIVE_RATING_LINK_DAYS = 7
 EXECUTIVE_RATING_START_CUTOFF = datetime(2026, 10, 1, 0, 0)
+EXECUTIVE_MANUAL_RATING_START_CUTOFF = datetime(2026, 9, 1, 0, 0)
 
 # 🚗 ตั้งค่ารายชื่อรถยนต์
 SYS_CARS = ["Civic (บัส)", "Civic (บอล)", "Camry (ตุ้ม)", "MG-EP (เนก)"]
@@ -912,7 +913,7 @@ def render_combined_executive_rating(raw_token):
         if len(by_id) != len(ids):
             st.error("ข้อมูลรายการประเมินไม่ครบ กรุณาติดต่อผู้ดูแลระบบ")
             return
-        pending = [by_id[booking_id] for booking_id in ids if not by_id[booking_id].get("is_rated")]
+        pending = [by_id[booking_id] for booking_id in ids if executive_rating_pending(by_id[booking_id])]
         if not pending:
             st.success("ทุกรายการได้รับการประเมินแล้ว")
             return
@@ -921,7 +922,7 @@ def render_combined_executive_rating(raw_token):
             end = booking_wall_datetime(row.get("end_time"))
             if (not row.get("is_executive_booking") or row.get("status") != "Approved"
                     or row.get("resource") not in RATABLE_CARS
-                    or not start or start < EXECUTIVE_RATING_START_CUTOFF
+                    or not start or start < EXECUTIVE_MANUAL_RATING_START_CUTOFF
                     or not end or end > thai_wall_now()):
                 st.error("มีรายการที่ไม่เข้าเงื่อนไขประเมิน กรุณาติดต่อผู้ดูแลระบบ")
                 return
@@ -971,9 +972,18 @@ def render_combined_executive_rating(raw_token):
                                 "executive_rating_token_hash": None})
                 payloads[booking_id] = payload
             for booking_id, payload in payloads.items():
-                saved = supabase.table("bookings").update(payload).eq("id", booking_id) \
-                    .eq("is_executive_booking", True).eq("status", "Approved") \
-                    .or_("is_rated.eq.false,is_rated.is.null").execute()
+                query = supabase.table("bookings").update(payload).eq("id", booking_id) \
+                    .eq("is_executive_booking", True).eq("status", "Approved")
+                if by_id[booking_id].get("is_rated"):
+                    query = query.eq("is_rated", True).eq("executive_rating_invite_status", "pre_cutoff") \
+                        .is_("rating_review", "null").is_("executive_rating_completed_at", "null") \
+                        .gte("start_time", EXECUTIVE_MANUAL_RATING_START_CUTOFF.isoformat()) \
+                        .lt("start_time", EXECUTIVE_RATING_START_CUTOFF.isoformat())
+                    for topic in RATING_TOPICS:
+                        query = query.is_(topic, "null")
+                else:
+                    query = query.or_("is_rated.eq.false,is_rated.is.null")
+                saved = query.execute()
                 if not saved.data:
                     raise ValueError(f"รายการ #{booking_id} ถูกประเมินแล้วหรือข้อมูลเปลี่ยน")
             get_executive_batch_client().table("executive_rating_batches").update({
@@ -1676,19 +1686,33 @@ def load_management_schedule():
     return schedule_df
 
 
+def executive_rating_pending(row):
+    if row.get("executive_rating_invite_status") == "completed" or row.get("executive_rating_completed_at"):
+        return False
+    if not row.get("is_rated"):
+        return True
+    start = booking_wall_datetime(row.get("start_time"))
+    return bool(
+        start and EXECUTIVE_MANUAL_RATING_START_CUTOFF <= start < EXECUTIVE_RATING_START_CUTOFF
+        and row.get("executive_rating_invite_status") == "pre_cutoff"
+        and not row.get("rating_review")
+        and all(row.get(topic) is None for topic in RATING_TOPICS)
+    )
+
+
 def render_completed_executive_rating_admin(recorder):
     """Admin-only manual invitation, separate from automatic email scheduling."""
     st.markdown("### สร้างลิงก์ประเมินรวมสำหรับงานที่สิ้นสุดแล้ว")
     try:
         rows = supabase.table("bookings").select(
-            "id,resource,start_time,end_time,destination,is_rated,status,is_executive_booking"
+            "*"
         ).eq("status", "Approved").eq("is_executive_booking", True) \
-            .in_("resource", RATABLE_CARS).gte("start_time", EXECUTIVE_RATING_START_CUTOFF.isoformat()) \
+            .in_("resource", RATABLE_CARS).gte("start_time", EXECUTIVE_MANUAL_RATING_START_CUTOFF.isoformat()) \
             .lt("end_time", thai_wall_now().isoformat()).order("end_time", desc=True).execute().data or []
     except Exception as exc:
         st.error(f"โหลดรายการที่สิ้นสุดแล้วไม่ได้: {exc}")
         return
-    eligible = [row for row in rows if not row.get("is_rated")]
+    eligible = [row for row in rows if executive_rating_pending(row)]
     labels = {row["id"]: f"#{row['id']} · {row['resource']} · "
               f"{booking_wall_datetime(row['end_time']):%d/%m/%Y %H:%M} · {str(row.get('destination') or '-')[:40]}"
               for row in eligible}
@@ -1697,12 +1721,12 @@ def render_completed_executive_rating_admin(recorder):
     if st.button("รวมและสร้างลิงก์ประเมิน", disabled=len(selected) < 2, type="primary"):
         try:
             fresh = supabase.table("bookings").select(
-                "id,resource,start_time,end_time,is_rated,status,is_executive_booking"
+                "*"
             ).in_("id", selected).execute().data or []
             if len(fresh) != len(selected) or any(
-                row.get("is_rated") or row.get("status") != "Approved"
+                not executive_rating_pending(row) or row.get("status") != "Approved"
                 or not row.get("is_executive_booking") or row.get("resource") not in RATABLE_CARS
-                or booking_wall_datetime(row["start_time"]) < EXECUTIVE_RATING_START_CUTOFF
+                or booking_wall_datetime(row["start_time"]) < EXECUTIVE_MANUAL_RATING_START_CUTOFF
                 or booking_wall_datetime(row["end_time"]) >= thai_wall_now()
                 for row in fresh
             ):
