@@ -896,6 +896,7 @@ def render_public_executive_rating(raw_token):
 def render_combined_executive_rating(raw_token):
     """One expiring public link with one confirmation for all selected bookings."""
     token_hash = hash_executive_rating_token(raw_token)
+    shared_answers = raw_token.startswith("shared_")
     try:
         batches = get_executive_batch_client().table("executive_rating_batches").select("*") \
             .eq("token_hash", token_hash).limit(1).execute().data or []
@@ -912,6 +913,9 @@ def render_combined_executive_rating(raw_token):
         by_id = {row["id"]: row for row in rows}
         if len(by_id) != len(ids):
             st.error("ข้อมูลรายการประเมินไม่ครบ กรุณาติดต่อผู้ดูแลระบบ")
+            return
+        if shared_answers and len({row.get("resource") for row in rows}) != 1:
+            st.error("รายการรถหรือคนขับเปลี่ยนแปลง กรุณาติดต่อแอดมินเพื่อสร้างลิงก์ใหม่")
             return
         pending = [by_id[booking_id] for booking_id in ids if executive_rating_pending(by_id[booking_id])]
         if not pending:
@@ -936,9 +940,19 @@ def render_combined_executive_rating(raw_token):
     copy = EXECUTIVE_RATING_I18N[language]
     st.subheader(copy["title"])
     st.caption(copy["intro"])
+    if shared_answers:
+        summary_copy = {
+            "TH": ("รายการเดินทางที่ใช้ผลประเมินชุดเดียวกัน", "กรอกครั้งเดียว ผลประเมินนี้ใช้กับทุกรายการด้านล่าง"),
+            "JP": ("同じ評価を適用する運行一覧", "1回の回答を以下のすべての運行に適用します。"),
+            "EN": ("Trips covered by this evaluation", "Complete once. These answers apply to every trip listed below."),
+        }[language]
+        st.subheader(summary_copy[0])
+        st.info(summary_copy[1])
+        for row in rows:
+            st.write(f"#{row['id']} · {row['resource']} · {booking_wall_datetime(row['start_time']):%d/%m/%Y %H:%M} – {booking_wall_datetime(row['end_time']):%d/%m/%Y %H:%M} · {row.get('destination') or '-'}")
     with st.form(f"combined_rating_{batch['id']}_{language}"):
         answers = {}
-        for row in pending:
+        for row in (pending[:1] if shared_answers else pending):
             booking_id = row["id"]
             st.markdown(f"### #{booking_id} · {row['resource']} · {booking_wall_datetime(row['end_time']):%d/%m/%Y %H:%M}")
             st.write(f"**{copy['scale']}**")
@@ -953,6 +967,9 @@ def render_combined_executive_rating(raw_token):
             suggestion = st.text_area(copy["suggestion"],
                 key=f"combined_{batch['id']}_{booking_id}_{language}_suggestion")
             answers[booking_id] = (scores, reasons, incidents, suggestion)
+        if shared_answers:
+            shared_answer = answers[pending[0]["id"]]
+            answers = {row["id"]: shared_answer for row in pending}
         confirm = st.checkbox(copy["confirm"])
         submitted = st.form_submit_button(copy["submit"], type="primary", width="stretch")
 
@@ -967,6 +984,8 @@ def render_combined_executive_rating(raw_token):
                 payload = build_rating_payload(scores, reasons, suggestion, submitted_at, incidents)
                 payload["rating_review"].update({"source": "executive_combined", "language": language,
                                                   "batch_id": batch["id"]})
+                if shared_answers:
+                    payload["rating_review"].update({"evaluation_mode": "single_for_multiple_trips", "booking_ids": ids})
                 payload.update({"executive_rating_invite_status": "completed",
                                 "executive_rating_completed_at": submitted_at,
                                 "executive_rating_token_hash": None})
@@ -1718,7 +1737,11 @@ def render_completed_executive_rating_admin(recorder):
               for row in eligible}
     selected = st.multiselect("เลือกรายการที่ยังไม่ประเมิน (อย่างน้อย 2 รายการ)",
                               list(labels), format_func=lambda booking_id: labels[booking_id])
-    if st.button("รวมและสร้างลิงก์ประเมิน", disabled=len(selected) < 2, type="primary"):
+    create_standard = st.button("รวมและสร้างลิงก์ประเมิน", disabled=len(selected) < 2, type="primary")
+    selected_resources = {row["resource"] for row in eligible if row["id"] in selected}
+    create_shared = st.button("ประเมินครั้งเดียวหลายรอบ · สร้างลิงก์", disabled=len(selected) < 2 or len(selected_resources) != 1)
+    st.caption("ปุ่มประเมินครั้งเดียวหลายรอบ: เลือกอย่างน้อย 2 รายการของรถและคนขับชื่อเดียวกัน คะแนนและรายละเอียดชุดเดียวจะใช้กับทุกรอบ")
+    if create_standard or create_shared:
         try:
             fresh = supabase.table("bookings").select(
                 "*"
@@ -1731,7 +1754,9 @@ def render_completed_executive_rating_admin(recorder):
                 for row in fresh
             ):
                 raise ValueError("รายการเปลี่ยนแปลงหรือไม่เข้าเงื่อนไข กรุณาโหลดหน้าใหม่")
-            raw_token = secrets.token_urlsafe(32)
+            if create_shared and len({row["resource"] for row in fresh}) != 1:
+                raise ValueError("ต้องเป็นรถและคนขับชื่อเดียวกันทุกรายการ")
+            raw_token = ("shared_" if create_shared else "") + secrets.token_urlsafe(32)
             now = datetime.now(THAILAND_TZ)
             expires_at = now + timedelta(days=EXECUTIVE_RATING_LINK_DAYS)
             get_executive_batch_client().table("executive_rating_batches").insert({
