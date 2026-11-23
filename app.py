@@ -782,8 +782,31 @@ def build_rating_payload(scores, reasons, suggestion, submitted_at, incidents=No
         "is_rated": True, **{key: min(scores[key], 3) for key in RATING_TOPICS},
         "suggestion": suggestion,
         "rating_review": {"version": 2, "submitted_at": submitted_at, "requests": requests,
+                          "comments": {key: str(reasons.get(key) or "").strip() for key in RATING_TOPICS
+                                       if str(reasons.get(key) or "").strip()},
                           "driving_incidents": incidents},
     }
+
+
+def rating_admin_details(review):
+    """Readable report fields; also recover reasons from older special-score requests."""
+    review = review if isinstance(review, dict) else {}
+    comments = review.get("comments") or {}
+    requests = review.get("requests") or {}
+    result = {}
+    for key, topic in RATING_TOPICS.items():
+        request = requests.get(key) or {}
+        result[f"คอมเมนต์: {topic}"] = comments.get(key) or request.get("reason") or ""
+    incidents = review.get("driving_incidents") or {}
+    for key, label in [("sudden_braking", "เบรกกะทันหัน"), ("drowsy_driving", "หลับใน")]:
+        incident = incidents.get(key) or {}
+        result[label] = {True: "ใช่", False: "ไม่ใช่"}.get(incident.get("yes"), "ไม่ระบุ")
+    braking = incidents.get("sudden_braking") or {}
+    result["จำนวนครั้งเบรกกะทันหัน"] = braking.get("count") if braking.get("count") is not None else "ไม่ระบุ"
+    result["รายละเอียดหลับใน"] = (incidents.get("drowsy_driving") or {}).get("details") or ""
+    result["วันที่ส่งประเมิน"] = review.get("submitted_at") or ""
+    result["รูปแบบประเมิน"] = "ครั้งเดียวหลายรอบ" if review.get("evaluation_mode") == "single_for_multiple_trips" else "รายรอบ"
+    return result
 
 
 def render_driving_incidents(copy, key_prefix):
@@ -2919,6 +2942,9 @@ elif choice == "📊 รายงานประจำเดือน":
                 out_df['มารยาท'] = f_df.get('q4', '-')
                 out_df['ข้อเสนอแนะ'] = f_df.get('suggestion', '-')
                 reviews = f_df.get('rating_review', pd.Series(None, index=f_df.index, dtype=object))
+                detail_rows = reviews.apply(rating_admin_details)
+                for detail_column in rating_admin_details(None):
+                    out_df[detail_column] = detail_rows.apply(lambda value: value[detail_column])
                 out_df['เกณฑ์คะแนน'] = reviews.apply(lambda value: 'ใหม่: 3 = ตามมาตรฐาน' if isinstance(value, dict) and value.get('version') == 2 else 'เดิม: 1–5')
                 out_df['รายละเอียดคะแนนพิเศษ'] = reviews.apply(lambda value: json.dumps(value, ensure_ascii=False) if isinstance(value, dict) else '')
                 
@@ -2949,6 +2975,21 @@ elif choice == "📊 รายงานประจำเดือน":
                     else: st.info("ไม่มีผลประเมินเกณฑ์เดิมในเดือนที่เลือก")
             
             st.markdown("---")
+            st.markdown("#### คอมเมนต์และรายละเอียดการประเมิน")
+            if 'is_rated' in f_df.columns:
+                reviewed = f_df[f_df['is_rated'] == True]
+                if not reviewed.empty:
+                    review_ids = reviewed.index.tolist()
+                    selected_review = st.selectbox("เลือกรายการเพื่ออ่านคอมเมนต์", review_ids,
+                        format_func=lambda idx: f"#{reviewed.loc[idx, 'id']} · {reviewed.loc[idx, 'resource']} · {reviewed.loc[idx, 'เวลาเริ่ม']}")
+                    review_row = reviewed.loc[selected_review]
+                    st.write("ข้อเสนอแนะอื่นๆ")
+                    st.text(str(review_row.get('suggestion') or '').strip() or "ไม่มีข้อความที่บันทึกไว้")
+                    for label, value in rating_admin_details(review_row.get('rating_review')).items():
+                        st.write(label)
+                        st.text(str(value) if value != "" else "ไม่มีข้อความที่บันทึกไว้")
+                else:
+                    st.info("ไม่มีรายการประเมินแล้วในเดือนที่เลือก")
             st.dataframe(out_df, width="stretch")
             
             buf = io.BytesIO()
