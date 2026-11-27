@@ -1296,11 +1296,43 @@ def _parse_clock_pair(text):
 
 
 def _find_requested_resource(text):
+    # Check explicit vehicle names before standalone driver names. In particular,
+    # the historical "Civic (ตุ้ม)" still refers to the physical Civic.
     matches = []
     for resource, aliases in RESOURCE_SEARCH_ALIASES.items():
-        if any(alias.lower() in text for alias in sorted(aliases, key=len, reverse=True)):
+        if any(alias in text for alias in aliases if alias not in {"บัส", "บอล"}):
             matches.append(resource)
-    return matches
+    if matches:
+        return matches
+
+    driver_names = {
+        "บัส": "Civic (บัส)", "บอล": "Civic (บอล)",
+        "ตุ้ม": "Camry (ตุ้ม)", "เนก": "MG-EP (เนก)",
+    }
+    candidate = re.sub(
+        r"สัปดาห์หน้า|อาทิตย์หน้า|สัปดาห์นี้|อาทิตย์นี้|เดือนหน้า|เดือนนี้|"
+        r"มะรืนนี้|มะรืน|พรุ่งนี้|วันนี้|ช่วงเช้า|ตอนเช้า|ช่วงบ่าย|ตอนบ่าย|"
+        r"ว่างไหม|ว่างมั้ย|ว่างหรือเปล่า|ติดคิวไหม|ขอจอง|คนขับ|พี่|ครับ|ค่ะ|คะ|"
+        r"\d+(?:[/:.-]\d+)*", " ", text,
+    )
+    candidate = candidate.strip(" ?!.,:–-")
+    if candidate in driver_names:
+        return [driver_names[candidate]]
+    if not candidate or " " in candidate or len(candidate) < 3:
+        return []
+    comparable = dict(driver_names)
+    for resource, aliases in RESOURCE_SEARCH_ALIASES.items():
+        comparable.update({alias: resource for alias in aliases if " " not in alias})
+    scores = {}
+    for alias, resource in comparable.items():
+        score = difflib.SequenceMatcher(None, candidate, alias).ratio()
+        if score >= 0.74:
+            scores[resource] = max(scores.get(resource, 0), score)
+    ranked = sorted(scores, key=scores.get, reverse=True)
+    close_matches = [resource for resource in ranked if scores[ranked[0]] - scores[resource] < 0.10]
+    if len(close_matches) > 1:
+        raise ValueError("ระบุชื่อรถหรือคนขับเพิ่ม: " + ", ".join(close_matches))
+    return close_matches
 
 
 def parse_availability_query(query, now=None):
@@ -1309,7 +1341,13 @@ def parse_availability_query(query, now=None):
     if not text:
         return None, "กรุณาพิมพ์คำถามที่ต้องการค้นหา"
     today = (now or thai_wall_now()).date()
+    try:
+        requested_resources = _find_requested_resource(text)
+    except ValueError as exc:
+        return None, str(exc)
     date_start, date_end, date_error = _parse_search_date_range(text, today)
+    if date_error and date_error.startswith("กรุณาระบุวันที่") and len(requested_resources) == 1:
+        date_start, date_end, date_error = today, today, None
     if date_error:
         return None, date_error
     if date_end < today:
@@ -1331,7 +1369,6 @@ def parse_availability_query(query, now=None):
     if datetime.combine(today, start_clock) >= datetime.combine(today, end_clock):
         return None, "เวลาเริ่มต้องมาก่อนเวลาสิ้นสุด"
 
-    requested_resources = _find_requested_resource(text)
     category = "ห้องประชุม" if ("ห้อง" in text or any(r in SYS_ROOMS for r in requested_resources)) else "รถยนต์"
     requested_resources = [
         resource for resource in requested_resources
@@ -1358,9 +1395,7 @@ def _build_resource_units(resources, requested_resources=None):
         if requested_resources and not any(item in members for item in requested_resources):
             continue
         booking_resource = next((item for item in requested_resources if item in members), resource)
-        label = " / ".join(members)
-        if len(members) > 1:
-            label += " (รถคันเดียวกัน)"
+        label = next((car for car in SYS_CARS if car in members), resource)
         units.append({"label": label, "members": members, "booking_resource": booking_resource})
     return units
 
