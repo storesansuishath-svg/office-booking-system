@@ -1890,7 +1890,7 @@ def render_management_schedule():
 
     recorder = st.session_state.get("admin_user", "Admin")
     st.caption("บันทึกเฉพาะรถยนต์ · อนุมัติทันที · ไม่มีการแจ้งเตือน LINE · รายละเอียดหน้านี้เห็นได้เฉพาะ Admin")
-    st.info("งานที่เริ่มตั้งแต่ 1 ตุลาคม 2026 และใช้รถพร้อมคนขับ ระบบจะส่งลิงก์ประเมินทางอีเมลหลังจบงาน")
+    st.info("บันทึกรายการได้โดยไม่ต้องกรอกอีเมล หลังจบงานแอดมินสามารถสร้างลิงก์ประเมินได้")
     executive_notice = st.session_state.pop("executive_notice", None)
     if executive_notice:
         notice_level, notice_text = executive_notice
@@ -1903,12 +1903,6 @@ def render_management_schedule():
             st.text_input("ผู้บันทึก", value=recorder, disabled=True)
             destination = st.text_input("สถานที่ปลายทาง / Google Map", key="executive_destination")
             purpose = st.text_area("วัตถุประสงค์การใช้งาน", key="executive_purpose")
-            executive_email = st.text_input(
-                "อีเมลผู้รับแบบประเมิน",
-                placeholder="name@example.com",
-                key="executive_rating_email",
-                help="จำเป็นสำหรับรถพร้อมคนขับและงานที่เริ่มตั้งแต่ 1 ตุลาคม 2026",
-            )
         with right:
             today = thai_wall_now().date()
             start_date = st.date_input("วันที่เริ่ม", min_value=today, key="executive_start_date")
@@ -1928,8 +1922,6 @@ def render_management_schedule():
                 st.error("ไม่สามารถบันทึกเวลาย้อนหลังได้")
             elif start_time >= end_time:
                 st.error("เวลาเริ่มต้องมาก่อนเวลาสิ้นสุด")
-            elif start_time >= EXECUTIVE_RATING_START_CUTOFF and resource in RATABLE_CARS and not is_valid_email(executive_email):
-                st.error("กรุณากรอกอีเมลผู้รับแบบประเมินให้ถูกต้อง")
             else:
                 is_conflict, conflict_user, conflict_status, is_executive_conflict = check_booking_conflict(
                     resource, start_time.isoformat(), end_time.isoformat()
@@ -1941,8 +1933,8 @@ def render_management_schedule():
                     st.error(f"บันทึกไม่ได้: {resource} {detail} ในช่วงเวลานี้")
                 else:
                     try:
-                        needs_email_rating = start_time >= EXECUTIVE_RATING_START_CUTOFF and resource in RATABLE_CARS
-                        inserted = supabase.table("bookings").insert({
+                        needs_manual_rating = start_time >= EXECUTIVE_MANUAL_RATING_START_CUTOFF and resource in RATABLE_CARS
+                        supabase.table("bookings").insert({
                             "resource": resource,
                             "requester": recorder,
                             "phone": "-",
@@ -1952,36 +1944,14 @@ def render_management_schedule():
                             "purpose": purpose,
                             "destination": destination,
                             "status": "Approved",
-                            "is_rated": not needs_email_rating,
+                            "is_rated": not needs_manual_rating,
                             "is_executive_booking": True,
-                            "executive_rating_email": executive_email.strip() if needs_email_rating else None,
-                            "executive_rating_invite_status": "pre_cutoff" if start_time < EXECUTIVE_RATING_START_CUTOFF else (
-                                "not_required" if resource not in RATABLE_CARS else "preparing"
-                            ),
+                            "executive_rating_email": None,
+                            "executive_rating_invite_status": "manual_pending" if needs_manual_rating else "not_required",
                             "last_updated_by": recorder,
                             "last_updated_at": datetime.now(THAILAND_TZ).isoformat(),
                         }).execute()
-                        booking_id = inserted.data[0]["id"]
-                        if needs_email_rating:
-                            _, token_hash, expires_at, rating_url = make_executive_rating_invite(end_time)
-                            invite_fields = {
-                                "executive_rating_token_hash": token_hash,
-                                "executive_rating_expires_at": expires_at,
-                                "executive_rating_invite_status": "preparing",
-                            }
-                            supabase.table("bookings").update(invite_fields).eq("id", booking_id).execute()
-                            scheduled, schedule_message = schedule_executive_rating_email(
-                                booking_id, executive_email.strip(), end_time, rating_url
-                            )
-                            supabase.table("bookings").update({
-                                "executive_rating_invite_status": "scheduled" if scheduled else "schedule_failed"
-                            }).eq("id", booking_id).execute()
-                            if scheduled:
-                                st.session_state["executive_notice"] = ("success", "บันทึกรายการและตั้งเวลาส่งอีเมลประเมินเรียบร้อย")
-                            else:
-                                st.session_state["executive_notice"] = ("warning", f"บันทึกรายการแล้ว แต่ยังตั้งเวลาส่งอีเมลไม่ได้: {schedule_message}")
-                        else:
-                            st.session_state["executive_notice"] = ("success", "บันทึกตารางผู้บริหารเรียบร้อย รถถูกกันคิวแล้ว")
+                        st.session_state["executive_notice"] = ("success", "บันทึกตารางผู้บริหารเรียบร้อย รถถูกกันคิวแล้ว")
                         st.rerun()
                     except Exception as exc:
                         st.error(f"บันทึกไม่สำเร็จ: {exc}")
@@ -2020,6 +1990,7 @@ def render_management_schedule():
         "pre_cutoff": "ก่อนวันเริ่มใช้งาน",
         "not_required": "ไม่ต้องประเมิน",
         "preparing": "กำลังตั้งเวลา",
+        "manual_pending": "รอแอดมินสร้างลิงก์ประเมิน",
     })
     executive_df["แก้ไขล่าสุด"] = executive_df.get("last_updated_at").map(format_thai_audit_datetime)
     executive_df["บันทึก/แก้ไขล่าสุดโดย"] = executive_df.get("last_updated_by", executive_df["requester"]).fillna(executive_df["requester"])
@@ -2090,11 +2061,7 @@ def render_management_schedule():
             edit_destination = st.text_input("สถานที่ปลายทาง / Google Map", str(record.get("destination", "")), key=f"{edit_key}_destination")
             edit_purpose = st.text_area("วัตถุประสงค์การใช้งาน", str(record.get("purpose", "")), key=f"{edit_key}_purpose")
             previous_email = record.get("executive_rating_email")
-            edit_email = st.text_input(
-                "อีเมลผู้รับแบบประเมิน",
-                "" if pd.isna(previous_email) else str(previous_email),
-                key=f"{edit_key}_rating_email",
-            )
+            edit_email = "" if pd.isna(previous_email) else str(previous_email).strip()
         with edit_right:
             old_start = booking_wall_datetime(record["start_time"])
             old_end = booking_wall_datetime(record["end_time"])
@@ -2111,8 +2078,8 @@ def render_management_schedule():
             if updated_start >= updated_end:
                 raise ValueError("เวลาเริ่มต้องมาก่อนเวลาสิ้นสุด")
             needs_email_rating = updated_start >= EXECUTIVE_RATING_START_CUTOFF and edit_resource in RATABLE_CARS
-            if needs_email_rating and not is_valid_email(edit_email):
-                raise ValueError("กรุณากรอกอีเมลผู้รับแบบประเมินให้ถูกต้อง")
+            needs_email_rating = needs_email_rating and is_valid_email(edit_email)
+            needs_manual_rating = updated_start >= EXECUTIVE_MANUAL_RATING_START_CUTOFF and edit_resource in RATABLE_CARS
             is_conflict, _, _, _ = check_booking_conflict(
                 edit_resource, updated_start.isoformat(), updated_end.isoformat(), exclude_booking_id=record["id"]
             )
@@ -2123,10 +2090,15 @@ def render_management_schedule():
                     "resource": edit_resource, "destination": edit_destination, "purpose": edit_purpose,
                     "start_time": updated_start.isoformat(), "end_time": updated_end.isoformat(),
                     "executive_rating_email": edit_email.strip() if needs_email_rating else None,
-                    "is_rated": not needs_email_rating,
+                    "is_rated": not needs_manual_rating,
                     "last_updated_by": recorder, "last_updated_at": datetime.now(THAILAND_TZ).isoformat(),
                 }
-                if needs_email_rating:
+                if record.get("executive_rating_invite_status") == "completed" or isinstance(record.get("rating_review"), dict):
+                    update_fields.pop("is_rated")
+                    update_fields.pop("executive_rating_email")
+                    supabase.table("bookings").update(update_fields).eq("id", record["id"]).execute()
+                    st.session_state["executive_notice"] = ("success", "แก้ไขรายการเรียบร้อย")
+                elif needs_email_rating:
                     _, token_hash, expires_at, rating_url = make_executive_rating_invite(updated_end)
                     update_fields.update({
                         "executive_rating_token_hash": token_hash,
@@ -2149,11 +2121,12 @@ def render_management_schedule():
                     update_fields.update({
                         "executive_rating_token_hash": None,
                         "executive_rating_expires_at": None,
-                        "executive_rating_invite_status": "pre_cutoff" if updated_start < EXECUTIVE_RATING_START_CUTOFF else "not_required",
+                        "executive_rating_invite_status": "manual_pending" if needs_manual_rating else "not_required",
                         "executive_rating_completed_at": None,
                     })
                     supabase.table("bookings").update(update_fields).eq("id", record["id"]).execute()
-                    schedule_executive_rating_email(record["id"], "", updated_end, "", action="cancel")
+                    if is_valid_email(edit_email):
+                        schedule_executive_rating_email(record["id"], "", updated_end, "", action="cancel")
                     st.session_state["executive_notice"] = ("success", "แก้ไขรายการเรียบร้อย")
                 st.rerun()
         except ValueError as exc:
